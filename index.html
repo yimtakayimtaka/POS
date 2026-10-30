@@ -1110,7 +1110,7 @@
         </div>
     </div>
 
-    <!-- LIVE CAMERA SCANNER MODAL (Food.html Style) -->
+    <!-- LIVE CAMERA SCANNER MODAL -->
     <div id="cameraModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-3 hidden">
         <div class="bg-navy-950 rounded-2xl shadow-2xl border border-slate-800 w-full max-w-md p-4 space-y-4 flex flex-col max-h-[90vh]">
             <div class="flex items-center justify-between text-white border-b border-slate-800 pb-2">
@@ -1125,9 +1125,9 @@
                 <div id="reader" class="w-full h-full"></div>
             </div>
 
-            <div class="flex items-center justify-between text-xs text-slate-400">
-                <select id="active-camera-select" onchange="switchActiveCamera(this.value)" class="bg-slate-800 text-white border border-slate-700 rounded-lg p-2 font-medium flex-1 mr-2"></select>
-                <button onclick="closeCameraModal()" class="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg">Cancel</button>
+            <div class="flex items-center justify-between text-xs text-slate-400 gap-2">
+                <select id="active-camera-select" onchange="switchActiveCamera(this.value)" class="bg-slate-800 text-white border border-slate-700 rounded-lg p-2 font-medium flex-1"></select>
+                <button onclick="closeCameraModal()" class="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg hover:bg-slate-700 transition-colors">Cancel</button>
             </div>
         </div>
     </div>
@@ -3241,7 +3241,6 @@
             if(onlineBox) onlineBox.classList.add('hidden');
 
             renderPendingItems();
-            // Stays on the same screen and clears fields ready for the next item as requested
         }
 
         function renderPendingItems() {
@@ -3313,24 +3312,46 @@
             }
         }
 
-        /* FOOD.HTML STYLE CAMERA SCANNER INTEGRATION */
+        /* ROBUST CAMERA SCANNER INTEGRATION */
         async function initCameraList() {
             try {
                 const devices = await Html5Qrcode.getCameras();
                 availableCameras = devices || [];
                 const select = document.getElementById('active-camera-select');
+                
+                if (availableCameras.length > 0) {
+                    if (!selectedCameraId || !availableCameras.some(c => c.id === selectedCameraId)) {
+                        selectedCameraId = availableCameras[0].id;
+                        localStorage.setItem('yimtaka_default_camera', selectedCameraId);
+                    }
+                }
+
                 if (select) {
                     select.innerHTML = availableCameras.map((c, i) => `
                         <option value="${c.id}" ${c.id === selectedCameraId ? 'selected' : ''}>${c.label || 'Camera ' + (i + 1)}</option>
-                    `).join('');
+                    `).join('') || '<option value="">Default Camera / Rear Camera</option>';
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error("Error listing cameras:", e);
+                const select = document.getElementById('active-camera-select');
+                if (select) {
+                    select.innerHTML = '<option value="">Default Camera / Rear Camera</option>';
+                }
+            }
         }
 
-        function openCameraModal() {
-            initCameraList();
+        async function openCameraModal() {
+            await initCameraList();
             openModal('cameraModal');
+            
             const camId = selectedCameraId || (availableCameras.length > 0 ? availableCameras[0].id : null);
+
+            try {
+                if (html5QrCodeScanner) {
+                    try { await html5QrCodeScanner.stop(); } catch(e) {}
+                    try { await html5QrCodeScanner.clear(); } catch(e) {}
+                }
+            } catch(e) {}
 
             html5QrCodeScanner = new Html5Qrcode("reader");
             const config = { fps: 15, qrbox: { width: 250, height: 250 } };
@@ -3339,27 +3360,48 @@
             html5QrCodeScanner.start(cameraIdOrConfig, config, (decodedText) => {
                 document.getElementById('itemBarcode').value = decodedText;
                 handleBarcodeScannerInput();
+                lookupBarcodeOnline();
                 closeCameraModal();
-            }).catch(err => console.error("Camera error:", err));
+            }, (errorMessage) => {
+                // scan error frame, ignore
+            }).catch(err => {
+                console.error("Camera start error:", err);
+                // Fallback to environment facingMode if specific device ID fails
+                if (camId) {
+                    html5QrCodeScanner.start({ facingMode: "environment" }, config, (decodedText) => {
+                        document.getElementById('itemBarcode').value = decodedText;
+                        handleBarcodeScannerInput();
+                        lookupBarcodeOnline();
+                        closeCameraModal();
+                    }).catch(e => console.error("Fallback camera error:", e));
+                }
+            });
         }
 
-        function closeCameraModal() {
+        async function closeCameraModal() {
             if (html5QrCodeScanner) {
-                html5QrCodeScanner.stop().then(() => {
-                    html5QrCodeScanner.clear();
-                    closeModal('cameraModal');
-                }).catch(() => closeModal('cameraModal'));
-            } else {
-                closeModal('cameraModal');
+                try {
+                    await html5QrCodeScanner.stop();
+                } catch(e) {}
+                try {
+                    await html5QrCodeScanner.clear();
+                } catch(e) {}
+                html5QrCodeScanner = null;
             }
+            closeModal('cameraModal');
         }
 
-        function switchActiveCamera(camId) {
+        async function switchActiveCamera(camId) {
             selectedCameraId = camId;
             localStorage.setItem('yimtaka_default_camera', camId);
             if (html5QrCodeScanner) {
-                html5QrCodeScanner.stop().then(() => openCameraModal());
+                try {
+                    await html5QrCodeScanner.stop();
+                    await html5QrCodeScanner.clear();
+                } catch(e) {}
+                html5QrCodeScanner = null;
             }
+            openCameraModal();
         }
     </script>
 </body>
