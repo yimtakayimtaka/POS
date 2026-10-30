@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Yimtaka POS - Point of Sale & Inventory Management</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -254,7 +254,7 @@
             </header>
 
             <!-- VIEW CONTAINER -->
-            <div id="view-container" class="flex-1 overflow-y-auto p-6 relative">
+            <div id="view-container" class="flex-1 overflow-y-auto p-6 relative pb-20">
 
                 <!-- 1. DASHBOARD VIEW -->
                 <section id="view-dashboard" class="space-y-6 hidden">
@@ -674,127 +674,139 @@
                     <div id="report-content-area" class="space-y-6"></div>
                 </section>
 
-                <!-- INTEGRATED CLIENT INTAKE VIEW -->
-                <section id="view-client" class="space-y-6 hidden max-w-5xl">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- REDESIGNED CLIENT INTAKE VIEW -->
+                <section id="view-client" class="space-y-4 max-w-xl mx-auto pb-24 hidden">
+                    <!-- TOP TABS FOR CLIENT INTAKE SCREENS -->
+                    <div class="flex bg-slate-200/80 p-1 rounded-xl text-xs font-bold shadow-sm">
+                        <button onclick="switchClientTab('connection')" id="client-tab-connection" class="flex-1 py-2.5 rounded-lg bg-white text-blue-600 shadow-sm transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-plug"></i> Connection
+                        </button>
+                        <button onclick="switchClientTab('scanning')" id="client-tab-scanning" class="flex-1 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-barcode"></i> Item Scanning
+                        </button>
+                        <button onclick="switchClientTab('scanned')" id="client-tab-scanned" class="flex-1 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-boxes-stacked"></i> Scanned Items <span id="clientTabBadge" class="bg-blue-600 text-white px-1.5 py-0.5 rounded-full text-[10px]">0</span>
+                        </button>
+                    </div>
 
-                        <!-- LEFT: PENDING INTAKE ITEM LIST -->
-                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col">
-                            <div class="flex justify-between items-center border-b pb-3">
-                                <h3 class="font-bold text-slate-800 text-sm">Pending Intake Items</h3>
-                                <span id="pendingCountBadge" class="bg-blue-100 text-blue-700 font-bold text-xs px-2.5 py-0.5 rounded-full">0</span>
-                            </div>
-
-                            <div id="pendingItemsList" class="flex-1 overflow-y-auto space-y-2 min-h-[250px] max-h-[450px]">
-                                <div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet. Scan or manually enter items on the right.</div>
-                            </div>
-
-                            <div class="pt-2 border-t space-y-2">
-                                <button onclick="attemptPosSync()" id="btnSyncPOS" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-sm shadow flex items-center justify-center gap-2">
-                                    <i class="fa-solid fa-rotate"></i>
-                                    <span>Sync & Send to POS Terminal</span>
-                                </button>
+                    <!-- 1. CONNECTION TAB -->
+                    <div id="client-content-connection" class="space-y-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h3 class="font-bold text-slate-800 text-sm">Connect to Master POS Terminal</h3>
+                            <div id="clientSyncBadge" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-bold">
+                                Disconnected
                             </div>
                         </div>
 
-                        <!-- RIGHT: DISCOVERY, AUTHENTICATION & FORM ENTRY -->
-                        <div class="md:col-span-2 space-y-5">
-
-                            <!-- POS DISCOVERY & PAIRING CARD -->
-                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                                <div class="flex justify-between items-center border-b pb-2">
-                                    <h3 class="font-bold text-slate-800 text-sm">Connect to Master POS Terminal</h3>
-                                    <div id="clientSyncBadge" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-bold">
-                                        Disconnected
-                                    </div>
-                                </div>
-
-                                <div class="space-y-3">
-                                    <div class="flex gap-2">
-                                        <input type="text" id="targetPosNameInput" placeholder="POS Name to search..." value="Main Terminal" class="flex-1 p-2.5 border rounded-xl text-xs bg-slate-50 font-medium">
-                                        <button onclick="searchPosTerminal()" id="btnSearchPOS" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-700">Search POS</button>
-                                    </div>
-
-                                    <!-- Alert Feedback Banner -->
-                                    <div id="authAlertBox" class="hidden p-3 rounded-xl text-xs font-semibold flex items-center gap-2">
-                                        <i id="authAlertIcon" class="fa-solid fa-circle-info"></i>
-                                        <span id="authAlertText">Connecting...</span>
-                                    </div>
-
-                                    <!-- Found Terminal Options & Inputs -->
-                                    <div id="foundPosCard" class="hidden p-3.5 bg-blue-50 border border-blue-200 rounded-xl space-y-3 text-xs">
-                                        <div class="flex justify-between items-start">
-                                            <div>
-                                                <div id="foundPosTitle" class="font-bold text-blue-900 text-sm">Main Terminal</div>
-                                                <div id="foundPosDesc" class="text-blue-700 mt-0.5">Store POS Terminal 1</div>
-                                            </div>
-                                            <span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">Online</span>
-                                        </div>
-
-                                        <div class="grid grid-cols-3 gap-2">
-                                            <input type="text" id="clientUsername" placeholder="Username" value="admin" class="p-2 border rounded-lg bg-white">
-                                            <input type="password" id="clientPassword" placeholder="Password" value="admin" class="p-2 border rounded-lg bg-white">
-                                            <input type="text" id="clientPairingCode" placeholder="Pairing Code" value="1234" class="p-2 border rounded-lg bg-white font-mono font-bold">
-                                        </div>
-
-                                        <button onclick="connectToPos()" id="btnConnectPOS" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow flex items-center justify-center gap-2">
-                                            <span>Authenticate & Fetch Master Catalog</span>
-                                        </button>
-                                    </div>
+                        <div class="space-y-3 text-xs">
+                            <div class="space-y-1">
+                                <label class="font-semibold text-slate-700">POS Search Name</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="targetPosNameInput" placeholder="Main Terminal" value="Main Terminal" class="flex-1 p-2.5 border rounded-xl bg-slate-50 font-medium">
+                                    <button onclick="searchPosTerminal()" id="btnSearchPOS" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700">Search</button>
                                 </div>
                             </div>
 
-                            <!-- INTAKE SCAN & ENTRY FORM -->
-                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                                <div class="flex justify-between items-center border-b pb-2">
-                                    <h3 class="font-bold text-slate-800 text-sm">Item Intake Entry</h3>
-                                    <button onclick="openCameraModal()" class="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-indigo-100">
-                                        <i class="fa-solid fa-camera"></i>
-                                        <span>Scan Camera</span>
-                                    </button>
-                                </div>
+                            <!-- Alert Feedback Banner -->
+                            <div id="authAlertBox" class="hidden p-3 rounded-xl font-semibold flex items-center gap-2">
+                                <i id="authAlertIcon" class="fa-solid fa-circle-info"></i>
+                                <span id="authAlertText">Connecting...</span>
+                            </div>
 
-                                <div class="space-y-3 text-xs">
-                                    <div>
-                                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode</label>
-                                        <div class="flex gap-2 mt-1">
-                                            <input type="text" id="itemBarcode" oninput="handleBarcodeScannerInput()" placeholder="Scan or enter barcode..." class="flex-1 p-2.5 border rounded-xl font-mono text-sm">
-                                            <button onclick="lookupBarcodeOnline()" class="bg-slate-100 text-slate-700 border px-3 rounded-xl font-bold hover:bg-slate-200">Online Find</button>
-                                        </div>
-                                    </div>
+                            <div class="space-y-2 pt-2 border-t">
+                                <label class="font-semibold text-slate-700">Credentials & Pairing Code</label>
+                                <input type="text" id="clientUsername" placeholder="Username" value="admin" class="w-full p-2.5 border rounded-xl bg-slate-50">
+                                <input type="password" id="clientPassword" placeholder="Password" value="admin" class="w-full p-2.5 border rounded-xl bg-slate-50">
+                                <input type="text" id="clientPairingCode" placeholder="Pairing Code" value="1234" class="w-full p-2.5 border rounded-xl bg-slate-50 font-mono font-bold">
+                            </div>
 
-                                    <div id="onlineSuggestionsBox" class="hidden border rounded-xl p-2 bg-slate-50 space-y-1 max-h-32 overflow-y-auto"></div>
+                            <button onclick="connectToPos()" id="btnConnectPOS" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 shadow flex items-center justify-center gap-2">
+                                <span>Connect & Load Master Catalog</span>
+                            </button>
+                        </div>
+                    </div>
 
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <div class="col-span-2">
-                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Product Name</label>
-                                            <input type="text" id="itemName" placeholder="Item title..." class="w-full p-2.5 border rounded-xl mt-1">
-                                        </div>
-                                        <div>
-                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Sale Price (£)</label>
-                                            <input type="number" step="0.01" id="itemPrice" value="0.00" class="w-full p-2.5 border rounded-xl mt-1 font-bold text-blue-600">
-                                        </div>
-                                        <div>
-                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Stock Intake Amount</label>
-                                            <input type="number" id="itemQty" value="1" min="1" class="w-full p-2.5 border rounded-xl mt-1 font-bold">
-                                        </div>
-                                    </div>
+                    <!-- 2. ITEM SCANNING TAB -->
+                    <div id="client-content-scanning" class="space-y-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hidden">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h3 class="font-bold text-slate-800 text-sm">Item Intake Entry</h3>
+                            <span class="text-emerald-600 text-[11px] font-bold"><i class="fa-solid fa-circle text-[8px] mr-1"></i> Connected</span>
+                        </div>
 
-                                    <div>
-                                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Supplier</label>
-                                        <div class="flex gap-2 mt-1">
-                                            <select id="supplierSelect" class="flex-1 p-2.5 border rounded-xl bg-white">
-                                                <option value="Default Supplier">Default Supplier</option>
-                                            </select>
-                                            <button onclick="addNewSupplier()" class="px-3 bg-slate-100 border rounded-xl font-bold text-slate-700 hover:bg-slate-200">+ Add</button>
-                                        </div>
-                                    </div>
-
-                                    <button onclick="saveIntakeItem()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow">
-                                        Add to Intake List
-                                    </button>
+                        <div class="space-y-3 text-xs pb-6">
+                            <div>
+                                <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode</label>
+                                <div class="flex gap-2 mt-1">
+                                    <input type="text" id="itemBarcode" oninput="handleBarcodeScannerInput()" placeholder="Scan or enter barcode..." class="flex-1 p-2.5 border rounded-xl font-mono text-sm">
+                                    <button onclick="lookupBarcodeOnline()" class="bg-slate-100 text-slate-700 border px-3 rounded-xl font-bold hover:bg-slate-200">Online Find</button>
                                 </div>
                             </div>
+
+                            <div id="onlineSuggestionsBox" class="hidden border rounded-xl p-2 bg-slate-50 space-y-1 max-h-32 overflow-y-auto"></div>
+
+                            <div class="space-y-1">
+                                <label class="font-semibold text-slate-600 uppercase text-[10px]">Product Name</label>
+                                <input type="text" id="itemName" placeholder="Item title..." class="w-full p-2.5 border rounded-xl">
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="font-semibold text-slate-600 uppercase text-[10px]">Sale Price (£)</label>
+                                    <input type="number" step="0.01" id="itemPrice" value="0.00" class="w-full p-2.5 border rounded-xl font-bold text-blue-600">
+                                </div>
+                                <div>
+                                    <label class="font-semibold text-slate-600 uppercase text-[10px]">Stock Quantity</label>
+                                    <input type="number" id="itemQty" value="1" min="1" class="w-full p-2.5 border rounded-xl font-bold">
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="font-semibold text-slate-600 uppercase text-[10px]">Supplier</label>
+                                <div class="flex gap-2 mt-1">
+                                    <select id="supplierSelect" class="flex-1 p-2.5 border rounded-xl bg-white">
+                                        <option value="Default Supplier">Default Supplier</option>
+                                    </select>
+                                    <button onclick="addNewSupplier()" class="px-3 bg-slate-100 border rounded-xl font-bold text-slate-700 hover:bg-slate-200">+ Add</button>
+                                </div>
+                            </div>
+
+                            <!-- CAMERA SELECTION OPTION -->
+                            <div class="space-y-1 pt-1">
+                                <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode Scanner Camera</label>
+                                <select id="cameraSelect" class="w-full p-2.5 border rounded-xl bg-slate-50 font-medium">
+                                    <option value="environment">Back Camera (Environment)</option>
+                                    <option value="user">Front Camera (Selfie)</option>
+                                </select>
+                            </div>
+
+                            <!-- BUTTONS AREA WITH SCAN CAMERA ON BOTTOM RIGHT & ENTER/ADD NEXT TO LEFT -->
+                            <div class="pt-6 pb-4 flex items-center justify-end gap-2">
+                                <button onclick="saveIntakeItem()" class="px-5 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow flex items-center gap-1.5">
+                                    <i class="fa-solid fa-plus"></i> Enter/Add
+                                </button>
+                                <button onclick="openCameraModal()" class="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow flex items-center gap-1.5">
+                                    <i class="fa-solid fa-camera"></i> Scan Camera
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. SCANNED ITEMS TAB -->
+                    <div id="client-content-scanned" class="space-y-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hidden">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h3 class="font-bold text-slate-800 text-sm">Scanned Intake Items</h3>
+                            <span id="pendingCountBadge" class="bg-blue-100 text-blue-700 font-bold text-xs px-2.5 py-0.5 rounded-full">0</span>
+                        </div>
+
+                        <div id="pendingItemsList" class="space-y-2 max-h-[350px] overflow-y-auto">
+                            <div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet.</div>
+                        </div>
+
+                        <div class="pt-2 border-t">
+                            <button onclick="attemptPosSync()" id="btnSyncPOS" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-xs shadow flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-rotate"></i>
+                                <span>Sync & Send to Master POS</span>
+                            </button>
                         </div>
                     </div>
                 </section>
@@ -1353,6 +1365,7 @@
         let activeView = 'dashboard';
         let activePosTab = 'billing';
         let activeReportTab = 'sales';
+        let activeClientTab = 'connection';
         let cart = [];
         let currentPosCategory = 'All';
         let currentUser = null;
@@ -1450,7 +1463,6 @@
                     CREATE TABLE IF NOT EXISTS intake_submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, barcode TEXT, name TEXT, price REAL, qty INTEGER, supplier TEXT, timestamp TEXT);
                 `);
 
-                // Ensure default admin user exists
                 const checkAdmin = this.query("SELECT COUNT(*) as cnt FROM users WHERE LOWER(name) = 'admin'");
                 if (checkAdmin.length === 0 || checkAdmin[0].cnt === 0) {
                     db.run("INSERT INTO users (name, password, role, access_level, active) VALUES ('admin', 'admin', 'Admin', 5, 1)");
@@ -1541,7 +1553,6 @@
             location.reload();
         }
 
-        // --- 3. CORE INIT ON LOAD ---
         window.onload = async function() {
             try {
                 supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1553,7 +1564,6 @@
             document.getElementById('login-screen').classList.remove('hidden');
         };
 
-        // --- LOGIN MODE TOGGLER ---
         function setLoginMode(mode) {
             loginMode = mode;
             const btnStd = document.getElementById('btn-mode-standard');
@@ -1567,7 +1577,6 @@
             }
         }
 
-        // --- 4. AUTHENTICATION (LOGIN / LOGOUT) ---
         function handleLoginSubmit(e) {
             e.preventDefault();
             const username = document.getElementById('login-username').value.trim();
@@ -1585,6 +1594,7 @@
 
                 if (loginMode === 'intake') {
                     document.getElementById('app-sidebar').classList.add('hidden');
+                    document.getElementById('clientUsername').value = currentUser.name;
                     switchView('client');
                 } else {
                     document.getElementById('app-sidebar').classList.remove('hidden');
@@ -1614,7 +1624,6 @@
             dbService.run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, String(val)]);
         }
 
-        // --- SIDEBAR DYNAMIC PERMISSION FILTERING ---
         function updateSidebarNavPermissions() {
             const navSections = ['dashboard', 'pos', 'products', 'customers', 'orders', 'reports', 'client', 'sync', 'settings', 'about'];
             navSections.forEach(sec => {
@@ -1629,7 +1638,6 @@
             });
         }
 
-        // --- 5. NAVIGATION & VIEW SWITCHING ---
         function switchView(viewId) {
             if (!hasPermission(`perm_level_${viewId}`)) {
                 alert("Access Denied: Your account does not have permission to access this section.");
@@ -1694,7 +1702,24 @@
             renderReports();
         }
 
-        // --- 6. DATA RENDER FUNCTIONS ---
+        function switchClientTab(tab) {
+            activeClientTab = tab;
+            const tabs = ['connection', 'scanning', 'scanned'];
+            tabs.forEach(t => {
+                const content = document.getElementById(`client-content-${t}`);
+                const btn = document.getElementById(`client-tab-${t}`);
+                if (content && btn) {
+                    if (t === tab) {
+                        content.classList.remove('hidden');
+                        btn.className = "flex-1 py-2.5 rounded-lg bg-white text-blue-600 shadow-sm transition-all flex items-center justify-center gap-1.5 font-bold";
+                    } else {
+                        content.classList.add('hidden');
+                        btn.className = "flex-1 py-2.5 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5 font-semibold";
+                    }
+                }
+            });
+        }
+
         function renderAllViews() {
             if (!db) return;
             renderDashboard();
@@ -1711,7 +1736,6 @@
             renderSubmissionsTable();
         }
 
-        // --- DASHBOARD RENDER ---
         function renderDashboard() {
             const today = new Date().toISOString().split('T')[0];
             const ordersToday = dbService.query("SELECT SUM(total) as rev, COUNT(id) as cnt FROM orders WHERE date_time LIKE ?", [`${today}%`])[0];
@@ -1753,7 +1777,6 @@
             updateDashboardCharts();
         }
 
-        // --- POS BILLING RENDER ---
         function renderPosProducts() {
             const search = (document.getElementById('pos-search-input')?.value || '').toLowerCase().trim();
             const categories = dbService.query("SELECT * FROM categories");
@@ -2057,7 +2080,6 @@
             openModal('receipt-modal');
         }
 
-        // --- PRODUCTS CRUD & ONLINE BARCODE SEARCH ---
         function renderProductsTable() {
             const search = (document.getElementById('products-search-input')?.value || '').toLowerCase().trim();
             const catFilter = document.getElementById('products-category-filter')?.value || 'All';
@@ -2336,7 +2358,6 @@
             }
         }
 
-        // --- CUSTOMERS CRUD ---
         function renderCustomersTable() {
             const search = (document.getElementById('customers-search-input')?.value || '').toLowerCase().trim();
             const customers = dbService.query("SELECT * FROM customers");
@@ -2395,7 +2416,6 @@
             }
         }
 
-        // --- ORDERS TABLE ---
         function renderOrdersTable() {
             const orders = dbService.query("SELECT o.*, c.name as cust_name FROM orders o LEFT JOIN customers c ON o.customer_id = c.id ORDER BY o.id DESC");
             const curr = getSetting('biz_currency', '£');
@@ -2424,7 +2444,6 @@
             openReceiptModal(o.order_num, o.date_time, o.customer_id, items.map(i => ({ name: i.product_name, qty: i.quantity, price: i.price })), o.subtotal, o.tax, o.total);
         }
 
-        // --- REPORTS & ANALYTICS ---
         function renderReports() {
             const area = document.getElementById('report-content-area');
             if (!area) return;
@@ -2470,7 +2489,6 @@
             }
         }
 
-        // --- SETTINGS FORM ---
         function loadSettingsForm() {
             document.getElementById('set-biz-name').value = getSetting('biz_name', 'Yimtaka Store');
             document.getElementById('set-biz-owner').value = getSetting('biz_owner', 'Yim Taka');
@@ -2505,7 +2523,6 @@
             renderAllViews();
         }
 
-        // --- USERS MANAGEMENT & PERMISSION CONFIG ---
         function renderUsersTable() {
             const users = dbService.query("SELECT * FROM users WHERE active = 1");
             const tbody = document.getElementById('users-tbody');
@@ -2566,7 +2583,6 @@
             }
         }
 
-        // --- UTILITY / HELPER FUNCTIONS ---
         function populateCustomerDropdowns() {
             const customers = dbService.query("SELECT * FROM customers");
             const select = document.getElementById('cart-customer-select');
@@ -2739,15 +2755,14 @@
             }
 
             const posName = document.getElementById('sync-pos-name').value.trim();
-            const posDesc = document.getElementById('sync-pos-desc').value.trim();
             const pairCode = document.getElementById('sync-pairing-code').value.trim();
 
             if(data.type === 'SEARCH') {
-                if(data.targetPos === posName) {
+                if(data.targetPos.toLowerCase() === posName.toLowerCase() || data.targetPos.toLowerCase() === 'main') {
                     syncChannel.send({
                         type: 'broadcast',
                         event: 'pos_response',
-                        payload: { type: 'FOUND', posName, posDesc, targetClient: data.clientUser }
+                        payload: { type: 'FOUND', posName, posDesc: document.getElementById('sync-pos-desc').value.trim(), targetClient: data.clientUser }
                     });
                     logSyncActivity(`Responded FOUND to discovery query from client (${data.clientUser || 'Scanner'})`);
                 }
@@ -2759,7 +2774,6 @@
                         event: 'pos_response',
                         payload: { type: 'AUTH_FAILED', reason: 'User blocked by administrator', targetClient: data.clientUser }
                     });
-                    logSyncActivity(`[RESPONSE SENT] Transmitted AUTH_FAILED (User Blocked) to client: ${data.clientUser}`);
                     return;
                 }
 
@@ -2767,20 +2781,9 @@
                 try {
                     const uRes = dbService.query("SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND password = ?", [data.username, data.password]);
                     if (uRes.length > 0) isValidUser = true;
-                } catch(err) {
-                    logSyncActivity(`[DB ERROR] Auth query failed: ${err.message}`);
-                }
-
-                if(!isValidUser) {
-                    logSyncActivity(`[AUTH FAIL] User '${data.username}' not found in database or password mismatch.`);
-                } else {
-                    logSyncActivity(`[AUTH OK] Credentials valid for user: ${data.username}`);
-                }
+                } catch(err) {}
 
                 const isPairingValid = (data.pairingCode === pairCode);
-                if(!isPairingValid) {
-                    logSyncActivity(`[AUTH FAIL] Pairing code mismatch ('${data.pairingCode}' vs expected '${pairCode}')`);
-                }
 
                 if(isPairingValid && isValidUser) {
                     const items = dbService.query("SELECT * FROM products WHERE active = 1");
@@ -2796,7 +2799,6 @@
                     });
 
                     logSyncActivity(`ACCEPTED Client Connection & Authenticated: ${data.clientUser}`);
-                    logSyncActivity(`[RESPONSE SENT] Transmitted CONNECTED + Master Catalog to client: ${data.clientUser}`);
                 } else {
                     let failReason = !isValidUser ? 'Invalid Username or Password' : 'Invalid Pairing Code';
                     syncChannel.send({
@@ -2805,13 +2807,11 @@
                         payload: { type: 'AUTH_FAILED', reason: failReason, targetClient: data.clientUser }
                     });
                     logSyncActivity(`REJECTED Client Connection (${failReason}): ${data.clientUser}`);
-                    logSyncActivity(`[RESPONSE SENT] Transmitted AUTH_FAILED (${failReason}) to client: ${data.clientUser}`);
                 }
             } else if(data.type === 'SYNC_DATA') {
                 if(blockedUsers.has(data.clientUser)) return;
 
                 logSyncActivity(`Receiving item intake (${data.items.length} items) from ${data.clientUser}...`);
-
                 const nowStamp = new Date().toLocaleString();
 
                 data.items.forEach(item => {
@@ -2840,7 +2840,6 @@
             }
         }
 
-        /* SUBMISSIONS INSPECTOR TABLE & EDIT CONTROLS */
         function renderSubmissionsTable() {
             const tbody = document.getElementById('submissions-tbody');
             const filterSelect = document.getElementById('userFilterSelect');
@@ -3046,26 +3045,24 @@
 
                 setTimeout(() => {
                     btn.disabled = false;
-                    btn.innerText = "Search POS";
-                    if(document.getElementById('foundPosCard').classList.contains('hidden')) {
-                        showAlertBox('error', 'POS terminal not found or offline. Ensure POS sync service is enabled on Main.');
-                    }
-                }, 2500);
+                    btn.innerText = "Search";
+                    showAlertBox('success', `Ready to connect to "${posName}". Enter credentials below.`);
+                }, 1500);
 
             } catch(err) {
                 btn.disabled = false;
-                btn.innerText = "Search POS";
+                btn.innerText = "Search";
                 showAlertBox('error', 'Failed to connect to signal channel.');
             }
         }
 
         async function connectToPos() {
-            const posName = (connectedPosInfo && connectedPosInfo.posName) ? connectedPosInfo.posName : document.getElementById('targetPosNameInput').value.trim();
+            const posName = document.getElementById('targetPosNameInput').value.trim() || 'Main Terminal';
             const username = document.getElementById('clientUsername').value.trim();
             const password = document.getElementById('clientPassword').value.trim();
             const pairingCode = document.getElementById('clientPairingCode').value.trim();
 
-            if(!posName) return alert("No POS terminal discovered or specified.");
+            if(!posName) return alert("Specify POS Terminal name.");
 
             if(authTimeoutTimer) clearTimeout(authTimeoutTimer);
 
@@ -3092,7 +3089,7 @@
 
                 authTimeoutTimer = setTimeout(() => {
                     btn.disabled = false;
-                    btn.innerText = "Authenticate & Fetch Master Catalog";
+                    btn.innerText = "Connect & Load Master Catalog";
                     if (document.getElementById('clientSyncBadge').innerText !== "Connected to POS") {
                         showAlertBox('error', 'No response from Master POS. Ensure Sync Hub is ENABLED on Main.');
                     }
@@ -3100,7 +3097,7 @@
 
             } catch(e) {
                 btn.disabled = false;
-                btn.innerText = "Authenticate & Fetch Master Catalog";
+                btn.innerText = "Connect & Load Master Catalog";
                 showAlertBox('error', 'Authentication broadcast failed.');
             }
         }
@@ -3118,14 +3115,8 @@
             const btn = document.getElementById('btnConnectPOS');
 
             if(data.type === 'FOUND') {
-                connectedPosInfo = {
-                    posName: data.posName,
-                    posDesc: data.posDesc
-                };
-                document.getElementById('foundPosCard').classList.remove('hidden');
-                document.getElementById('foundPosTitle').innerText = data.posName;
-                document.getElementById('foundPosDesc').innerText = data.posDesc;
-                showAlertBox('success', `Found POS Terminal "${data.posName}". Ready for authentication.`);
+                connectedPosInfo = { posName: data.posName, posDesc: data.posDesc };
+                showAlertBox('success', `Found POS Terminal "${data.posName}". Credentials verified.`);
             } else if(data.type === 'CONNECTED') {
                 masterCatalog = data.items || [];
                 if(data.suppliers) masterSuppliers = data.suppliers.map(s => s.name || s);
@@ -3135,11 +3126,15 @@
                 badge.innerText = "Connected to POS";
                 badge.className = "text-xs bg-emerald-500 text-white px-2.5 py-0.5 rounded-full font-bold";
                 document.getElementById('client-status-dot').className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse ml-auto";
-                showAlertBox('success', 'Connected and paired with POS Terminal!');
+                showAlertBox('success', 'Connected! Automatically switching to Item Scanning screen...');
 
                 btn.disabled = false;
                 btn.innerText = "Connected & Synced";
-                btn.className = "w-full bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700";
+                btn.className = "w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-sm shadow";
+
+                setTimeout(() => {
+                    switchClientTab('scanning');
+                }, 1000);
             } else if(data.type === 'AUTH_FAILED') {
                 const badge = document.getElementById('clientSyncBadge');
                 badge.innerText = "Authentication Failed";
@@ -3148,12 +3143,13 @@
                 showAlertBox('error', `Connection Failed: ${data.reason || 'Invalid details'}`);
 
                 btn.disabled = false;
-                btn.innerText = "Authenticate & Fetch Master Catalog";
-                btn.className = "w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow";
+                btn.innerText = "Connect & Load Master Catalog";
+                btn.className = "w-full bg-blue-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 shadow";
             } else if(data.type === 'SYNC_COMPLETE') {
                 showAlertBox('success', 'Stock intake batch sent and saved to POS Terminal successfully!');
                 localIntakeItems = [];
                 renderPendingItems();
+                switchClientTab('scanned');
             }
         }
 
@@ -3238,14 +3234,16 @@
             document.getElementById('itemQty').value = '1';
 
             renderPendingItems();
+            switchClientTab('scanned');
         }
 
         function renderPendingItems() {
             const container = document.getElementById('pendingItemsList');
             document.getElementById('pendingCountBadge').innerText = localIntakeItems.length;
+            document.getElementById('clientTabBadge').innerText = localIntakeItems.length;
 
             if(localIntakeItems.length === 0) {
-                container.innerHTML = `<div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet. Scan or manually enter items on the right.</div>`;
+                container.innerHTML = `<div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet.</div>`;
                 return;
             }
 
@@ -3275,6 +3273,7 @@
             document.getElementById('itemPrice').value = item.price;
             document.getElementById('itemQty').value = item.qty;
             document.getElementById('supplierSelect').value = item.supplier;
+            switchClientTab('scanning');
         }
 
         function removeIntakeItem(idx) {
@@ -3284,7 +3283,7 @@
 
         async function attemptPosSync() {
             if(localIntakeItems.length === 0) return alert("Intake list is empty.");
-            const posName = (connectedPosInfo && connectedPosInfo.posName) ? connectedPosInfo.posName : document.getElementById('targetPosNameInput').value.trim();
+            const posName = document.getElementById('targetPosNameInput').value.trim() || 'Main Terminal';
             const username = document.getElementById('clientUsername').value.trim();
 
             showAlertBox('info', 'Sending intake batch to POS Terminal...');
@@ -3303,24 +3302,38 @@
                     }
                 });
             } catch(e) {
-                showAlertBox('error', 'Failed to transmit batch data.');
+                alert('Failed to transmit batch data.');
             }
         }
 
-        /* CAMERA MODAL CONTROLS */
+        /* CAMERA MODAL CONTROLS WITH SELECTED CAMERA */
         function openCameraModal() {
             openModal('cameraModal');
+            const selectedCameraMode = document.getElementById('cameraSelect').value || 'environment';
+
             html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 200 }, decodedText => {
+            html5QrCode.start({ facingMode: selectedCameraMode }, { fps: 10, qrbox: 200 }, decodedText => {
                 document.getElementById('itemBarcode').value = decodedText;
                 handleBarcodeScannerInput();
                 closeCameraModal();
-            }).catch(e => console.error(e));
+            }).catch(e => {
+                console.error("Camera start error:", e);
+                alert("Could not start camera. Please check camera permissions.");
+                closeCameraModal();
+            });
         }
 
         function closeCameraModal() {
-            if(html5QrCode) html5QrCode.stop().then(() => closeModal('cameraModal'));
-            else closeModal('cameraModal');
+            if(html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                    closeModal('cameraModal');
+                }).catch(() => {
+                    closeModal('cameraModal');
+                });
+            } else {
+                closeModal('cameraModal');
+            }
         }
     </script>
 </body>
