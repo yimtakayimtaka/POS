@@ -770,15 +770,6 @@
                                 </div>
                             </div>
 
-                            <!-- CAMERA SELECTION OPTION -->
-                            <div class="space-y-1 pt-1">
-                                <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode Scanner Camera</label>
-                                <select id="cameraSelect" class="w-full p-2.5 border rounded-xl bg-slate-50 font-medium">
-                                    <option value="environment">Back Camera (Environment)</option>
-                                    <option value="user">Front Camera (Selfie)</option>
-                                </select>
-                            </div>
-
                             <!-- BUTTONS AREA WITH SCAN CAMERA ON BOTTOM RIGHT & ENTER/ADD NEXT TO LEFT -->
                             <div class="pt-6 pb-4 flex items-center justify-end gap-2">
                                 <button onclick="saveIntakeItem()" class="px-5 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow flex items-center gap-1.5">
@@ -939,7 +930,7 @@
                 </section>
 
                 <!-- 8. ABOUT VIEW -->
-                <section id="view-about" class="space-y-6 max-w-4xl hidden">
+                <section id="view-about" class="space-y-4 max-w-4xl hidden">
                     <div class="bg-blue-600 rounded-2xl p-8 text-white shadow-md relative overflow-hidden">
                         <div class="relative z-10 space-y-3">
                             <div class="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-white text-2xl backdrop-blur-sm">
@@ -1119,14 +1110,25 @@
         </div>
     </div>
 
-    <!-- CAMERA SCANNER MODAL -->
-    <div id="cameraModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 hidden">
-        <div class="bg-white p-5 rounded-2xl w-full max-w-sm space-y-4 shadow-xl border border-slate-200">
-            <div class="flex justify-between items-center border-b pb-2">
-                <h3 class="font-bold text-sm text-slate-800">Scan Barcode</h3>
-                <button onclick="closeCameraModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+    <!-- LIVE CAMERA SCANNER MODAL (Food.html Style) -->
+    <div id="cameraModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-3 hidden">
+        <div class="bg-navy-950 rounded-2xl shadow-2xl border border-slate-800 w-full max-w-md p-4 space-y-4 flex flex-col max-h-[90vh]">
+            <div class="flex items-center justify-between text-white border-b border-slate-800 pb-2">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-camera text-blue-400"></i>
+                    <h3 class="font-bold text-sm">Scan Barcode</h3>
+                </div>
+                <button onclick="closeCameraModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <div id="reader" class="w-full aspect-square bg-slate-100 rounded-xl overflow-hidden"></div>
+
+            <div class="relative w-full aspect-square bg-black rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
+                <div id="reader" class="w-full h-full"></div>
+            </div>
+
+            <div class="flex items-center justify-between text-xs text-slate-400">
+                <select id="active-camera-select" onchange="switchActiveCamera(this.value)" class="bg-slate-800 text-white border border-slate-700 rounded-lg p-2 font-medium flex-1 mr-2"></select>
+                <button onclick="closeCameraModal()" class="px-4 py-2 bg-slate-800 text-white font-bold rounded-lg">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -1386,7 +1388,9 @@
         let clientChannel = null;
         let connectedPosInfo = null;
         let authTimeoutTimer = null;
-        let html5QrCode = null;
+        let html5QrCodeScanner = null;
+        let selectedCameraId = localStorage.getItem('yimtaka_default_camera') || '';
+        let availableCameras = [];
         let localIntakeItems = [];
         let masterCatalog = [];
         let masterSuppliers = ['Default Supplier'];
@@ -1559,6 +1563,7 @@
             } catch(e) { console.error("Supabase init error:", e); }
 
             await dbService.init();
+            initCameraList();
             setupCharts();
             renderPendingItems();
             document.getElementById('login-screen').classList.remove('hidden');
@@ -1604,7 +1609,7 @@
                 }
                 renderAllViews();
             } else {
-                document.getElementById('login-error-msg').classList.remove('hidden');
+                document.getElementById('login-error-msg').classList.add('hidden');
             }
         }
 
@@ -3232,9 +3237,11 @@
             document.getElementById('itemName').value = '';
             document.getElementById('itemPrice').value = '0.00';
             document.getElementById('itemQty').value = '1';
+            const onlineBox = document.getElementById('onlineSuggestionsBox');
+            if(onlineBox) onlineBox.classList.add('hidden');
 
             renderPendingItems();
-            switchClientTab('scanned');
+            // Stays on the same screen and clears fields ready for the next item as requested
         }
 
         function renderPendingItems() {
@@ -3306,33 +3313,52 @@
             }
         }
 
-        /* CAMERA MODAL CONTROLS WITH SELECTED CAMERA */
-        function openCameraModal() {
-            openModal('cameraModal');
-            const selectedCameraMode = document.getElementById('cameraSelect').value || 'environment';
+        /* FOOD.HTML STYLE CAMERA SCANNER INTEGRATION */
+        async function initCameraList() {
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                availableCameras = devices || [];
+                const select = document.getElementById('active-camera-select');
+                if (select) {
+                    select.innerHTML = availableCameras.map((c, i) => `
+                        <option value="${c.id}" ${c.id === selectedCameraId ? 'selected' : ''}>${c.label || 'Camera ' + (i + 1)}</option>
+                    `).join('');
+                }
+            } catch(e) {}
+        }
 
-            html5QrCode = new Html5Qrcode("reader");
-            html5QrCode.start({ facingMode: selectedCameraMode }, { fps: 10, qrbox: 200 }, decodedText => {
+        function openCameraModal() {
+            initCameraList();
+            openModal('cameraModal');
+            const camId = selectedCameraId || (availableCameras.length > 0 ? availableCameras[0].id : null);
+
+            html5QrCodeScanner = new Html5Qrcode("reader");
+            const config = { fps: 15, qrbox: { width: 250, height: 250 } };
+            const cameraIdOrConfig = camId ? camId : { facingMode: "environment" };
+
+            html5QrCodeScanner.start(cameraIdOrConfig, config, (decodedText) => {
                 document.getElementById('itemBarcode').value = decodedText;
                 handleBarcodeScannerInput();
                 closeCameraModal();
-            }).catch(e => {
-                console.error("Camera start error:", e);
-                alert("Could not start camera. Please check camera permissions.");
-                closeCameraModal();
-            });
+            }).catch(err => console.error("Camera error:", err));
         }
 
         function closeCameraModal() {
-            if(html5QrCode) {
-                html5QrCode.stop().then(() => {
-                    html5QrCode.clear();
+            if (html5QrCodeScanner) {
+                html5QrCodeScanner.stop().then(() => {
+                    html5QrCodeScanner.clear();
                     closeModal('cameraModal');
-                }).catch(() => {
-                    closeModal('cameraModal');
-                });
+                }).catch(() => closeModal('cameraModal'));
             } else {
                 closeModal('cameraModal');
+            }
+        }
+
+        function switchActiveCamera(camId) {
+            selectedCameraId = camId;
+            localStorage.setItem('yimtaka_default_camera', camId);
+            if (html5QrCodeScanner) {
+                html5QrCodeScanner.stop().then(() => openCameraModal());
             }
         }
     </script>
