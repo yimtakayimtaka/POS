@@ -14,6 +14,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <!-- Canvas Confetti -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- HTML5 QR Code Scanner -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
     <script>
         tailwind.config = {
@@ -100,6 +104,12 @@
                 <p class="text-xs text-slate-400">Sign in to access your point of sale system</p>
             </div>
 
+            <!-- LOGIN MODE TOGGLE -->
+            <div class="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-center">
+                <button type="button" id="btn-mode-standard" onclick="setLoginMode('standard')" class="py-2 rounded-lg bg-white text-blue-600 shadow-sm transition-all">Standard POS</button>
+                <button type="button" id="btn-mode-intake" onclick="setLoginMode('intake')" class="py-2 rounded-lg text-slate-500 hover:text-slate-800 transition-all">Client Intake</button>
+            </div>
+
             <form onsubmit="handleLoginSubmit(event)" class="space-y-4 text-xs">
                 <div class="space-y-1">
                     <label class="font-semibold text-slate-700">Username</label>
@@ -117,8 +127,11 @@
                 </button>
             </form>
 
-            <div class="text-center text-[11px] text-slate-400 border-t border-slate-100 pt-4">
-                Default Credentials: <span class="font-mono text-slate-600 font-bold">admin / admin</span>
+            <div class="text-center text-[11px] text-slate-400 border-t border-slate-100 pt-4 flex flex-col items-center gap-2">
+                <div>Default Credentials: <span class="font-mono text-slate-600 font-bold">admin / admin</span></div>
+                <button onclick="recreateDatabase()" class="text-rose-500 hover:underline text-[10px]">
+                    <i class="fa-solid fa-rotate-right"></i> Reset / Recreate Database
+                </button>
             </div>
         </div>
     </div>
@@ -127,7 +140,7 @@
     <div id="app" class="flex w-full h-full">
 
         <!-- LEFT NAVIGATION SIDEBAR -->
-        <aside class="w-64 bg-navy-900 text-slate-300 flex flex-col justify-between flex-shrink-0 z-20 border-r border-slate-800">
+        <aside id="app-sidebar" class="w-64 bg-navy-900 text-slate-300 flex flex-col justify-between flex-shrink-0 z-20 border-r border-slate-800">
             <div>
                 <!-- Brand Header -->
                 <div class="p-4 flex items-center justify-between border-b border-slate-800/80">
@@ -167,6 +180,16 @@
                     <button onclick="switchView('reports')" id="nav-reports" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all">
                         <i class="fa-solid fa-chart-column w-5 text-center"></i>
                         <span>Reports</span>
+                    </button>
+                    <button onclick="switchView('client')" id="nav-client" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all text-amber-400 font-bold">
+                        <i class="fa-solid fa-mobile-screen-button w-5 text-center"></i>
+                        <span>Client Intake</span>
+                        <span id="client-status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-500 ml-auto"></span>
+                    </button>
+                    <button onclick="switchView('sync')" id="nav-sync" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all text-blue-400 font-bold">
+                        <i class="fa-solid fa-rotate w-5 text-center"></i>
+                        <span>Sync Hub</span>
+                        <span id="sync-active-dot" class="w-2.5 h-2.5 rounded-full bg-slate-500 ml-auto"></span>
                     </button>
                     <button onclick="switchView('settings')" id="nav-settings" class="nav-btn w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl transition-all">
                         <i class="fa-solid fa-gear w-5 text-center"></i>
@@ -546,6 +569,7 @@
                                         <th class="py-3 px-3">SKU</th>
                                         <th class="py-3 px-3">BARCODE</th>
                                         <th class="py-3 px-3">CATEGORY</th>
+                                        <th class="py-3 px-3">SUPPLIER</th>
                                         <th class="py-3 px-3">COST</th>
                                         <th class="py-3 px-3">PRICE</th>
                                         <th class="py-3 px-3">STOCK</th>
@@ -648,6 +672,219 @@
                     </div>
 
                     <div id="report-content-area" class="space-y-6"></div>
+                </section>
+
+                <!-- INTEGRATED CLIENT INTAKE VIEW -->
+                <section id="view-client" class="space-y-6 hidden max-w-5xl">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                        <!-- LEFT: PENDING INTAKE ITEM LIST -->
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col">
+                            <div class="flex justify-between items-center border-b pb-3">
+                                <h3 class="font-bold text-slate-800 text-sm">Pending Intake Items</h3>
+                                <span id="pendingCountBadge" class="bg-blue-100 text-blue-700 font-bold text-xs px-2.5 py-0.5 rounded-full">0</span>
+                            </div>
+
+                            <div id="pendingItemsList" class="flex-1 overflow-y-auto space-y-2 min-h-[250px] max-h-[450px]">
+                                <div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet. Scan or manually enter items on the right.</div>
+                            </div>
+
+                            <div class="pt-2 border-t space-y-2">
+                                <button onclick="attemptPosSync()" id="btnSyncPOS" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-bold text-sm shadow flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-rotate"></i>
+                                    <span>Sync & Send to POS Terminal</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT: DISCOVERY, AUTHENTICATION & FORM ENTRY -->
+                        <div class="md:col-span-2 space-y-5">
+
+                            <!-- POS DISCOVERY & PAIRING CARD -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <h3 class="font-bold text-slate-800 text-sm">Connect to Master POS Terminal</h3>
+                                    <div id="clientSyncBadge" class="text-xs bg-slate-100 text-slate-600 px-2.5 py-0.5 rounded-full font-bold">
+                                        Disconnected
+                                    </div>
+                                </div>
+
+                                <div class="space-y-3">
+                                    <div class="flex gap-2">
+                                        <input type="text" id="targetPosNameInput" placeholder="POS Name to search..." value="Main Terminal" class="flex-1 p-2.5 border rounded-xl text-xs bg-slate-50 font-medium">
+                                        <button onclick="searchPosTerminal()" id="btnSearchPOS" class="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-700">Search POS</button>
+                                    </div>
+
+                                    <!-- Alert Feedback Banner -->
+                                    <div id="authAlertBox" class="hidden p-3 rounded-xl text-xs font-semibold flex items-center gap-2">
+                                        <i id="authAlertIcon" class="fa-solid fa-circle-info"></i>
+                                        <span id="authAlertText">Connecting...</span>
+                                    </div>
+
+                                    <!-- Found Terminal Options & Inputs -->
+                                    <div id="foundPosCard" class="hidden p-3.5 bg-blue-50 border border-blue-200 rounded-xl space-y-3 text-xs">
+                                        <div class="flex justify-between items-start">
+                                            <div>
+                                                <div id="foundPosTitle" class="font-bold text-blue-900 text-sm">Main Terminal</div>
+                                                <div id="foundPosDesc" class="text-blue-700 mt-0.5">Store POS Terminal 1</div>
+                                            </div>
+                                            <span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">Online</span>
+                                        </div>
+
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <input type="text" id="clientUsername" placeholder="Username" value="admin" class="p-2 border rounded-lg bg-white">
+                                            <input type="password" id="clientPassword" placeholder="Password" value="admin" class="p-2 border rounded-lg bg-white">
+                                            <input type="text" id="clientPairingCode" placeholder="Pairing Code" value="1234" class="p-2 border rounded-lg bg-white font-mono font-bold">
+                                        </div>
+
+                                        <button onclick="connectToPos()" id="btnConnectPOS" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow flex items-center justify-center gap-2">
+                                            <span>Authenticate & Fetch Master Catalog</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- INTAKE SCAN & ENTRY FORM -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <h3 class="font-bold text-slate-800 text-sm">Item Intake Entry</h3>
+                                    <button onclick="openCameraModal()" class="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-indigo-100">
+                                        <i class="fa-solid fa-camera"></i>
+                                        <span>Scan Camera</span>
+                                    </button>
+                                </div>
+
+                                <div class="space-y-3 text-xs">
+                                    <div>
+                                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode</label>
+                                        <div class="flex gap-2 mt-1">
+                                            <input type="text" id="itemBarcode" oninput="handleBarcodeScannerInput()" placeholder="Scan or enter barcode..." class="flex-1 p-2.5 border rounded-xl font-mono text-sm">
+                                            <button onclick="lookupBarcodeOnline()" class="bg-slate-100 text-slate-700 border px-3 rounded-xl font-bold hover:bg-slate-200">Online Find</button>
+                                        </div>
+                                    </div>
+
+                                    <div id="onlineSuggestionsBox" class="hidden border rounded-xl p-2 bg-slate-50 space-y-1 max-h-32 overflow-y-auto"></div>
+
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="col-span-2">
+                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Product Name</label>
+                                            <input type="text" id="itemName" placeholder="Item title..." class="w-full p-2.5 border rounded-xl mt-1">
+                                        </div>
+                                        <div>
+                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Sale Price (£)</label>
+                                            <input type="number" step="0.01" id="itemPrice" value="0.00" class="w-full p-2.5 border rounded-xl mt-1 font-bold text-blue-600">
+                                        </div>
+                                        <div>
+                                            <label class="font-semibold text-slate-600 uppercase text-[10px]">Stock Intake Amount</label>
+                                            <input type="number" id="itemQty" value="1" min="1" class="w-full p-2.5 border rounded-xl mt-1 font-bold">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Supplier</label>
+                                        <div class="flex gap-2 mt-1">
+                                            <select id="supplierSelect" class="flex-1 p-2.5 border rounded-xl bg-white">
+                                                <option value="Default Supplier">Default Supplier</option>
+                                            </select>
+                                            <button onclick="addNewSupplier()" class="px-3 bg-slate-100 border rounded-xl font-bold text-slate-700 hover:bg-slate-200">+ Add</button>
+                                        </div>
+                                    </div>
+
+                                    <button onclick="saveIntakeItem()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow">
+                                        Add to Intake List
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SYNC HUB VIEW -->
+                <section id="view-sync" class="space-y-6 max-w-5xl hidden">
+                    <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                        <div class="flex items-center justify-between border-b pb-4">
+                            <div>
+                                <h3 class="font-bold text-slate-800 text-base">POS Client Synchronization Hub</h3>
+                                <p class="text-xs text-slate-400">Broadcast catalog and receive stock intake updates in real time.</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <label class="text-xs font-semibold text-slate-600">Enable Sync Service</label>
+                                <input type="checkbox" id="sync-enable-toggle" onchange="toggleSyncService()" class="w-5 h-5 text-blue-600 rounded">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                            <div class="space-y-1">
+                                <label class="font-semibold text-slate-700">POS Instance Name</label>
+                                <input type="text" id="sync-pos-name" value="Main Terminal" class="w-full p-2.5 border rounded-xl bg-slate-50 font-medium">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="font-semibold text-slate-700">Description</label>
+                                <input type="text" id="sync-pos-desc" value="Store POS Terminal 1" class="w-full p-2.5 border rounded-xl bg-slate-50">
+                            </div>
+                            <div class="space-y-1">
+                                <label class="font-semibold text-slate-700">Pairing Code</label>
+                                <input type="text" id="sync-pairing-code" value="1234" class="w-full p-2.5 border rounded-xl bg-slate-50 font-mono font-bold text-blue-600">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                            <!-- Active Connected Clients -->
+                            <div class="border rounded-xl p-4 bg-slate-50 space-y-3">
+                                <h4 class="font-bold text-xs uppercase text-slate-500 border-b pb-2 flex justify-between">
+                                    <span>Connected Client Scanners</span>
+                                    <span id="connected-clients-count" class="text-blue-600">0 Active</span>
+                                </h4>
+                                <div id="connected-clients-list" class="space-y-2 max-h-52 overflow-y-auto text-xs">
+                                    <div class="text-slate-400 italic">No client devices paired yet.</div>
+                                </div>
+                            </div>
+
+                            <!-- Live Activity Log (Newest Entries at Top) -->
+                            <div class="border rounded-xl p-4 bg-slate-50 space-y-3">
+                                <h4 class="font-bold text-xs uppercase text-slate-500 border-b pb-2">Sync Activity Log (Newest at Top)</h4>
+                                <div id="sync-activity-log" class="space-y-1.5 max-h-52 overflow-y-auto text-xs font-mono text-slate-600 flex flex-col">
+                                    <div class="text-slate-400 italic font-sans">Activity log listening for client devices...</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SUBMISSIONS INSPECTOR TABLE -->
+                        <div class="border rounded-xl p-5 bg-white space-y-4 shadow-sm">
+                            <div class="flex flex-col md:flex-row md:items-center justify-between border-b pb-3 gap-3">
+                                <div>
+                                    <h4 class="font-bold text-slate-800 text-sm">Client Intake Submissions</h4>
+                                    <p class="text-xs text-slate-400">View, audit, and modify stock items submitted by client intake scanners.</p>
+                                </div>
+                                <div class="flex items-center gap-2 text-xs">
+                                    <label class="font-semibold text-slate-600">Filter User:</label>
+                                    <select id="userFilterSelect" onchange="renderSubmissionsTable()" class="p-2 border rounded-xl bg-slate-50 font-medium">
+                                        <option value="ALL">All Users</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b text-slate-400">
+                                            <th class="p-2.5">TIME</th>
+                                            <th class="p-2.5">SUBMITTED BY</th>
+                                            <th class="p-2.5">BARCODE</th>
+                                            <th class="p-2.5">ITEM NAME</th>
+                                            <th class="p-2.5">PRICE</th>
+                                            <th class="p-2.5">QTY</th>
+                                            <th class="p-2.5">SUPPLIER</th>
+                                            <th class="p-2.5 text-center">ACTION</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="submissions-tbody">
+                                        <tr><td colspan="8" class="p-4 text-center text-slate-400 italic">No client submission records found.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- 7. SETTINGS VIEW -->
@@ -775,6 +1012,12 @@
                                     <label class="font-semibold text-slate-700">Reports</label>
                                     <input type="number" min="1" max="5" id="perm-level-reports" class="p-2 border rounded-lg bg-white font-mono text-center">
 
+                                    <label class="font-semibold text-slate-700">Client Intake</label>
+                                    <input type="number" min="1" max="5" id="perm-level-client" class="p-2 border rounded-lg bg-white font-mono text-center">
+
+                                    <label class="font-semibold text-slate-700">Sync Hub</label>
+                                    <input type="number" min="1" max="5" id="perm-level-sync" class="p-2 border rounded-lg bg-white font-mono text-center">
+
                                     <label class="font-semibold text-slate-700">Settings</label>
                                     <input type="number" min="1" max="5" id="perm-level-settings" class="p-2 border rounded-lg bg-white font-mono text-center">
 
@@ -826,6 +1069,55 @@
 
     <!-- MODALS CONTAINER -->
     
+    <!-- EDIT SUBMISSION MODAL -->
+    <div id="editSubmissionModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 hidden">
+        <div class="bg-white p-6 rounded-2xl w-full max-w-md space-y-4 shadow-2xl border border-slate-200">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-sm text-slate-800">Edit Client Submission</h3>
+                <button onclick="closeEditSubmissionModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="hidden" id="editSubId">
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="font-semibold text-slate-600 uppercase text-[10px]">Barcode</label>
+                    <input type="text" id="editSubBarcode" class="w-full p-2.5 border rounded-xl mt-1 font-mono bg-slate-50">
+                </div>
+                <div>
+                    <label class="font-semibold text-slate-600 uppercase text-[10px]">Product Name</label>
+                    <input type="text" id="editSubName" class="w-full p-2.5 border rounded-xl mt-1 font-medium">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Price (£)</label>
+                        <input type="number" step="0.01" id="editSubPrice" class="w-full p-2.5 border rounded-xl mt-1 font-bold text-blue-600">
+                    </div>
+                    <div>
+                        <label class="font-semibold text-slate-600 uppercase text-[10px]">Submitted Qty</label>
+                        <input type="number" id="editSubQty" min="1" class="w-full p-2.5 border rounded-xl mt-1 font-bold">
+                    </div>
+                </div>
+                <div>
+                    <label class="font-semibold text-slate-600 uppercase text-[10px]">Supplier</label>
+                    <input type="text" id="editSubSupplier" class="w-full p-2.5 border rounded-xl mt-1">
+                </div>
+                <button onclick="saveSubmissionEdit()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm shadow">
+                    Save Changes & Update Database
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CAMERA SCANNER MODAL -->
+    <div id="cameraModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 hidden">
+        <div class="bg-white p-5 rounded-2xl w-full max-w-sm space-y-4 shadow-xl border border-slate-200">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="font-bold text-sm text-slate-800">Scan Barcode</h3>
+                <button onclick="closeCameraModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="reader" class="w-full aspect-square bg-slate-100 rounded-xl overflow-hidden"></div>
+        </div>
+    </div>
+
     <!-- 1. ADD / EDIT PRODUCT MODAL WITH ONLINE BARCODE SEARCH -->
     <div id="product-modal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
@@ -875,6 +1167,11 @@
                             <option value="">No Category</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="font-semibold text-slate-700">Supplier</label>
+                    <input type="text" id="pm-supplier" class="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500">
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
@@ -1046,6 +1343,11 @@
 
     <!-- SYSTEM JAVASCRIPT LOGIC -->
     <script>
+        // --- SUPABASE CONFIGURATION ---
+        const SUPABASE_URL = "https://ifffyhvdlqhlpquhdjkr.supabase.co";
+        const SUPABASE_KEY = "sb_publishable_gwSGjADTxbd5jy9i2uJk8w_YrULU80P";
+        let supabaseClient = null;
+
         // --- 1. APPLICATION STATE & PERSISTENCE ---
         let db = null;
         let activeView = 'dashboard';
@@ -1059,6 +1361,23 @@
         let barcodeDebounceTimer = null;
         let activeScannedProduct = null;
         let cardQtySelections = {};
+        let loginMode = 'standard'; // 'standard' or 'intake'
+
+        // POSM Sync Hub State
+        let syncChannel = null;
+        let isSyncEnabled = false;
+        let connectedClients = {};
+        let blockedUsers = new Set();
+
+        // Client Intake State
+        let clientChannel = null;
+        let connectedPosInfo = null;
+        let authTimeoutTimer = null;
+        let html5QrCode = null;
+        let localIntakeItems = [];
+        let masterCatalog = [];
+        let masterSuppliers = ['Default Supplier'];
+        let editingIndex = null;
 
         // --- DEFAULT PERMISSION LEVELS ---
         const DEFAULT_PERMISSIONS = {
@@ -1068,6 +1387,8 @@
             'perm_level_customers': '1',
             'perm_level_orders': '1',
             'perm_level_reports': '1',
+            'perm_level_client': '1',
+            'perm_level_sync': '1',
             'perm_level_settings': '1',
             'perm_level_about': '1',
             'perm_level_admin': '5',
@@ -1087,7 +1408,6 @@
 
         function hasPermission(permKey) {
             if (!currentUser) return false;
-            // Admin role or Level >= required level
             if (currentUser.role === 'Admin') return true;
             const requiredLevel = getPermLevel(permKey);
             return currentUser.access_level >= requiredLevel;
@@ -1109,7 +1429,7 @@
                     if (savedDb) {
                         const uInt8Array = new Uint8Array(JSON.parse(savedDb));
                         db = new SQL.Database(uInt8Array);
-                        this.ensureUserPasswordColumn();
+                        this.ensureSchemaIntegrity();
                     } else {
                         db = new SQL.Database();
                         this.seedInitialSchema();
@@ -1117,14 +1437,24 @@
                     console.log("SQLite Database Initialized");
                 } catch (err) {
                     console.error("SQL Init Error:", err);
+                    recreateDatabase();
                 }
             }
 
-            ensureUserPasswordColumn() {
-                try {
-                    db.exec("ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'admin'");
-                } catch (e) {
-                    // Column already exists
+            ensureSchemaIntegrity() {
+                try { db.exec("ALTER TABLE users ADD COLUMN password TEXT DEFAULT 'admin'"); } catch (e) {}
+                try { db.exec("ALTER TABLE products ADD COLUMN supplier TEXT DEFAULT ''"); } catch (e) {}
+                
+                db.exec(`
+                    CREATE TABLE IF NOT EXISTS suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+                    CREATE TABLE IF NOT EXISTS intake_submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, barcode TEXT, name TEXT, price REAL, qty INTEGER, supplier TEXT, timestamp TEXT);
+                `);
+
+                // Ensure default admin user exists
+                const checkAdmin = this.query("SELECT COUNT(*) as cnt FROM users WHERE LOWER(name) = 'admin'");
+                if (checkAdmin.length === 0 || checkAdmin[0].cnt === 0) {
+                    db.run("INSERT INTO users (name, password, role, access_level, active) VALUES ('admin', 'admin', 'Admin', 5, 1)");
+                    this.saveToStorage();
                 }
             }
 
@@ -1140,7 +1470,7 @@
                     CREATE TABLE categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
                     CREATE TABLE products (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT, sku TEXT, barcode TEXT, category TEXT,
+                        name TEXT, sku TEXT, barcode TEXT, category TEXT, supplier TEXT,
                         cost REAL, price REAL, stock INTEGER, min_stock INTEGER, description TEXT, active INTEGER
                     );
                     CREATE TABLE customers (
@@ -1158,14 +1488,17 @@
                     );
                     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
                     CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, password TEXT, role TEXT, access_level INTEGER, active INTEGER);
+                    CREATE TABLE suppliers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+                    CREATE TABLE intake_submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, barcode TEXT, name TEXT, price REAL, qty INTEGER, supplier TEXT, timestamp TEXT);
                 `);
 
                 db.exec(`
                     INSERT INTO categories (name) VALUES ('Boxes'), ('Tins');
-                    INSERT INTO products (name, sku, barcode, category, cost, price, stock, min_stock, active) VALUES
-                    ('Aldi Coconut Oil', 'PRD-N6DC8', '4088600183480', 'Boxes', 0.99, 1.99, 7, 5, 1),
-                    ('Honey Balm', 'PRD-B2ZW4', '744368291983', 'Tins', 1.29, 2.50, 5, 5, 1),
-                    ('KTC Pure Coconut Oil', 'PRD-CNDNY', '5013635101818', 'Tins', 1.99, 2.99, 9, 5, 1);
+                    INSERT INTO suppliers (name) VALUES ('Default Supplier'), ('Global Foods');
+                    INSERT INTO products (name, sku, barcode, category, supplier, cost, price, stock, min_stock, active) VALUES
+                    ('Aldi Coconut Oil', 'PRD-N6DC8', '4088600183480', 'Boxes', 'Default Supplier', 0.99, 1.99, 7, 5, 1),
+                    ('Honey Balm', 'PRD-B2ZW4', '744368291983', 'Tins', 'Default Supplier', 1.29, 2.50, 5, 5, 1),
+                    ('KTC Pure Coconut Oil', 'PRD-CNDNY', '5013635101818', 'Tins', 'Global Foods', 1.99, 2.99, 9, 5, 1);
                     INSERT INTO customers (name, phone, email) VALUES ('Walk-in Customer', '', '');
                     INSERT INTO settings (key, value) VALUES
                     ('biz_name', 'Haqmedia'),
@@ -1202,12 +1535,37 @@
 
         const dbService = new DatabaseService();
 
+        function recreateDatabase() {
+            localStorage.removeItem('yimtaka_pos_db');
+            localStorage.removeItem('timeline_pos_db');
+            location.reload();
+        }
+
         // --- 3. CORE INIT ON LOAD ---
         window.onload = async function() {
+            try {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            } catch(e) { console.error("Supabase init error:", e); }
+
             await dbService.init();
             setupCharts();
+            renderPendingItems();
             document.getElementById('login-screen').classList.remove('hidden');
         };
+
+        // --- LOGIN MODE TOGGLER ---
+        function setLoginMode(mode) {
+            loginMode = mode;
+            const btnStd = document.getElementById('btn-mode-standard');
+            const btnInt = document.getElementById('btn-mode-intake');
+            if (mode === 'standard') {
+                btnStd.className = "py-2 rounded-lg bg-white text-blue-600 shadow-sm transition-all";
+                btnInt.className = "py-2 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+            } else {
+                btnInt.className = "py-2 rounded-lg bg-white text-blue-600 shadow-sm transition-all";
+                btnStd.className = "py-2 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+            }
+        }
 
         // --- 4. AUTHENTICATION (LOGIN / LOGOUT) ---
         function handleLoginSubmit(e) {
@@ -1223,14 +1581,17 @@
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('login-error-msg').classList.add('hidden');
                 
-                // Update navigation elements based on permission levels
                 updateSidebarNavPermissions();
 
-                // Find first allowed view
-                const defaultViews = ['dashboard', 'pos', 'products', 'customers', 'orders', 'reports', 'settings', 'about'];
-                let firstAllowed = defaultViews.find(v => hasPermission('perm_level_' + v)) || 'about';
-                
-                switchView(firstAllowed);
+                if (loginMode === 'intake') {
+                    document.getElementById('app-sidebar').classList.add('hidden');
+                    switchView('client');
+                } else {
+                    document.getElementById('app-sidebar').classList.remove('hidden');
+                    const defaultViews = ['dashboard', 'pos', 'products', 'customers', 'orders', 'reports', 'client', 'sync', 'settings', 'about'];
+                    let firstAllowed = defaultViews.find(v => hasPermission('perm_level_' + v)) || 'about';
+                    switchView(firstAllowed);
+                }
                 renderAllViews();
             } else {
                 document.getElementById('login-error-msg').classList.remove('hidden');
@@ -1239,6 +1600,7 @@
 
         function handleLogout() {
             currentUser = null;
+            document.getElementById('app-sidebar').classList.remove('hidden');
             document.getElementById('login-screen').classList.remove('hidden');
             document.getElementById('login-password').value = '';
         }
@@ -1254,7 +1616,7 @@
 
         // --- SIDEBAR DYNAMIC PERMISSION FILTERING ---
         function updateSidebarNavPermissions() {
-            const navSections = ['dashboard', 'pos', 'products', 'customers', 'orders', 'reports', 'settings', 'about'];
+            const navSections = ['dashboard', 'pos', 'products', 'customers', 'orders', 'reports', 'client', 'sync', 'settings', 'about'];
             navSections.forEach(sec => {
                 const btn = document.getElementById(`nav-${sec}`);
                 if (btn) {
@@ -1296,6 +1658,8 @@
                 'customers': 'Customers',
                 'orders': 'Orders',
                 'reports': 'Reports & Analytics',
+                'client': 'Client Intake',
+                'sync': 'Sync Hub',
                 'settings': 'Settings',
                 'about': 'About',
                 'admin': 'Administrator'
@@ -1344,6 +1708,7 @@
             loadPermissionForm();
             populateCustomerDropdowns();
             populateCategoryDropdowns();
+            renderSubmissionsTable();
         }
 
         // --- DASHBOARD RENDER ---
@@ -1352,8 +1717,8 @@
             const ordersToday = dbService.query("SELECT SUM(total) as rev, COUNT(id) as cnt FROM orders WHERE date_time LIKE ?", [`${today}%`])[0];
             const totalOrders = dbService.query("SELECT COUNT(id) as cnt FROM orders")[0].cnt;
             const customersCnt = dbService.query("SELECT COUNT(id) as cnt FROM customers")[0].cnt;
-            const productsCnt = dbService.query("SELECT COUNT(id) as cnt FROM products")[0].cnt;
-            const lowStockCnt = dbService.query("SELECT COUNT(id) as cnt FROM products WHERE stock <= min_stock")[0].cnt;
+            const productsCnt = dbService.query("SELECT COUNT(id) as cnt FROM products WHERE active = 1")[0].cnt;
+            const lowStockCnt = dbService.query("SELECT COUNT(id) as cnt FROM products WHERE stock <= min_stock AND active = 1")[0].cnt;
 
             const curr = getSetting('biz_currency', '£');
             document.getElementById('dash-today-sales').innerText = `${curr}${(ordersToday.rev || 0).toFixed(2)}`;
@@ -1375,7 +1740,7 @@
                 </tr>
             `).join('') || '<tr><td colspan="5" class="text-center py-4 text-slate-400">No recent orders</td></tr>';
 
-            const lowStockItems = dbService.query("SELECT * FROM products WHERE stock <= min_stock LIMIT 5");
+            const lowStockItems = dbService.query("SELECT * FROM products WHERE stock <= min_stock AND active = 1 LIMIT 5");
             const lowTbody = document.getElementById('dash-low-stock-tbody');
             lowTbody.innerHTML = lowStockItems.map(p => `
                 <tr>
@@ -1410,7 +1775,7 @@
             
             const filtered = products.filter(p => 
                 p.name.toLowerCase().includes(search) || 
-                p.sku.toLowerCase().includes(search) || 
+                (p.sku && p.sku.toLowerCase().includes(search)) || 
                 (p.barcode && String(p.barcode).toLowerCase().includes(search))
             );
 
@@ -1434,7 +1799,7 @@
                         </div>
                         <div class="my-auto text-center">
                             <div class="font-bold text-xs text-slate-800 line-clamp-2 leading-tight">${p.name}</div>
-                            <div class="text-[9px] text-slate-400 mt-0.5 font-mono">${p.barcode || p.sku}</div>
+                            <div class="text-[9px] text-slate-400 mt-0.5 font-mono">${p.barcode || p.sku || '-'}</div>
                         </div>
                         <div class="space-y-1.5">
                             <div class="font-bold text-xs text-blue-600 text-center">${curr}${p.price.toFixed(2)}</div>
@@ -1698,7 +2063,6 @@
             const catFilter = document.getElementById('products-category-filter')?.value || 'All';
             const curr = getSetting('biz_currency', '£');
 
-            // Action Permissions Respect
             const canAdd = hasPermission('perm_level_add_product');
             const canEdit = hasPermission('perm_level_edit_product');
             const canDelete = hasPermission('perm_level_delete_product');
@@ -1714,20 +2078,20 @@
             const btnCats = document.getElementById('btn-manage-categories');
             if (btnCats) btnCats.style.display = canCategories ? 'flex' : 'none';
 
-            let sql = "SELECT * FROM products WHERE 1=1";
+            let sql = "SELECT * FROM products WHERE active = 1";
             if (catFilter !== 'All') sql += ` AND category = '${catFilter}'`;
             const products = dbService.query(sql);
 
             const filtered = products.filter(p => 
                 p.name.toLowerCase().includes(search) || 
-                p.sku.toLowerCase().includes(search) ||
+                (p.sku && p.sku.toLowerCase().includes(search)) ||
                 (p.barcode && String(p.barcode).toLowerCase().includes(search))
             );
             const tbody = document.getElementById('products-tbody');
 
             if (tbody) {
                 tbody.innerHTML = filtered.map(p => {
-                    const costDisplay = canViewCost ? `${curr}${p.cost.toFixed(2)}` : '***';
+                    const costDisplay = canViewCost ? `${curr}${(p.cost || 0).toFixed(2)}` : '***';
                     
                     let actionBtns = '';
                     if (canEdit) {
@@ -1741,9 +2105,10 @@
                     return `
                     <tr>
                         <td class="py-3 px-3 font-bold text-slate-800">${p.name}</td>
-                        <td class="py-3 px-3 font-mono text-slate-500">${p.sku}</td>
+                        <td class="py-3 px-3 font-mono text-slate-500">${p.sku || '-'}</td>
                         <td class="py-3 px-3 font-mono text-slate-600">${p.barcode || '-'}</td>
                         <td class="py-3 px-3 text-slate-500">${p.category || '-'}</td>
+                        <td class="py-3 px-3 text-slate-500">${p.supplier || '-'}</td>
                         <td class="py-3 px-3 font-mono ${canViewCost ? '' : 'text-slate-400'}">${costDisplay}</td>
                         <td class="py-3 px-3 font-bold text-blue-600">${curr}${p.price.toFixed(2)}</td>
                         <td class="py-3 px-3 font-bold ${p.stock <= p.min_stock ? 'text-amber-600' : 'text-slate-700'}">${p.stock}</td>
@@ -1751,7 +2116,7 @@
                         <td class="py-3 px-3 text-right space-x-2">${actionBtns}</td>
                     </tr>
                 `;
-                }).join('') || '<tr><td colspan="9" class="text-center py-6 text-slate-400">No products found</td></tr>';
+                }).join('') || '<tr><td colspan="10" class="text-center py-6 text-slate-400">No products found</td></tr>';
             }
         }
 
@@ -1764,10 +2129,10 @@
             document.getElementById('product-modal-title').innerText = 'Add Product';
             document.getElementById('product-form').reset();
             document.getElementById('pm-id').value = '';
+            document.getElementById('pm-supplier').value = 'Default Supplier';
             
             document.getElementById('pm-sku').value = 'SKU-' + Math.floor(100000 + Math.random() * 900000);
             
-            // Mask/hide purchase cost input if no permission
             const costContainer = document.getElementById('pm-cost-container');
             if (costContainer) {
                 costContainer.style.display = hasPermission('perm_level_view_cost') ? 'block' : 'none';
@@ -1796,9 +2161,10 @@
             document.getElementById('product-modal-title').innerText = 'Edit Product';
             document.getElementById('pm-id').value = p.id;
             document.getElementById('pm-name').value = p.name;
-            document.getElementById('pm-sku').value = p.sku;
+            document.getElementById('pm-sku').value = p.sku || '';
             document.getElementById('pm-barcode').value = p.barcode || '';
             document.getElementById('pm-category').value = p.category || '';
+            document.getElementById('pm-supplier').value = p.supplier || 'Default Supplier';
             document.getElementById('pm-cost').value = p.cost;
             document.getElementById('pm-price').value = p.price;
             document.getElementById('pm-stock').value = p.stock;
@@ -1941,17 +2307,18 @@
             const sku = document.getElementById('pm-sku').value.trim();
             const barcode = document.getElementById('pm-barcode').value.trim();
             const category = document.getElementById('pm-category').value;
+            const supplier = document.getElementById('pm-supplier').value.trim() || 'Default Supplier';
             const cost = parseFloat(document.getElementById('pm-cost').value) || 0;
             const price = parseFloat(document.getElementById('pm-price').value) || 0;
             const stock = parseInt(document.getElementById('pm-stock').value) || 0;
             const minStock = parseInt(document.getElementById('pm-min-stock').value) || 5;
 
             if (id) {
-                dbService.run(`UPDATE products SET name=?, sku=?, barcode=?, category=?, cost=?, price=?, stock=?, min_stock=? WHERE id=?`,
-                    [name, sku, barcode, category, cost, price, stock, minStock, id]);
+                dbService.run(`UPDATE products SET name=?, sku=?, barcode=?, category=?, supplier=?, cost=?, price=?, stock=?, min_stock=? WHERE id=?`,
+                    [name, sku, barcode, category, supplier, cost, price, stock, minStock, id]);
             } else {
-                dbService.run(`INSERT INTO products (name, sku, barcode, category, cost, price, stock, min_stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-                    [name, sku, barcode, category, cost, price, stock, minStock]);
+                dbService.run(`INSERT INTO products (name, sku, barcode, category, supplier, cost, price, stock, min_stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                    [name, sku, barcode, category, supplier, cost, price, stock, minStock]);
             }
 
             closeModal('product-modal');
@@ -2304,7 +2671,7 @@
                 for (let i = 1; i < lines.length; i++) {
                     const cols = lines[i].split(',');
                     if (cols.length >= 7) {
-                        dbService.run("INSERT INTO products (name, sku, barcode, category, cost, price, stock, min_stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, 5, 1)",
+                        dbService.run("INSERT INTO products (name, sku, barcode, category, supplier, cost, price, stock, min_stock, active) VALUES (?, ?, ?, ?, 'Default Supplier', ?, ?, ?, 5, 1)",
                             [cols[0].trim(), cols[1].trim(), cols[2].trim(), cols[3].trim(), parseFloat(cols[4])||0, parseFloat(cols[5])||0, parseInt(cols[6])||0]);
                     }
                 }
@@ -2313,6 +2680,647 @@
                 alert("Products imported successfully!");
             };
             reader.readAsText(file);
+        }
+
+        /* ------------------------------------------------------------------ */
+        /*                     7. POSM SERVER SYNC HUB                        */
+        /* ------------------------------------------------------------------ */
+
+        function toggleSyncService() {
+            isSyncEnabled = document.getElementById('sync-enable-toggle').checked;
+            const dot = document.getElementById('sync-active-dot');
+
+            if(isSyncEnabled) {
+                dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse ml-auto";
+                setupSyncChannel();
+                logSyncActivity("POS Sync Service STARTED & Listening...");
+            } else {
+                dot.className = "w-2.5 h-2.5 rounded-full bg-slate-500 ml-auto";
+                if(syncChannel) {
+                    supabaseClient.removeChannel(syncChannel);
+                    syncChannel = null;
+                }
+                logSyncActivity("POS Sync Service DISABLED.");
+            }
+        }
+
+        function setupSyncChannel() {
+            const posName = document.getElementById('sync-pos-name').value.trim();
+            if(syncChannel) {
+                supabaseClient.removeChannel(syncChannel);
+                syncChannel = null;
+            }
+
+            if (!isSyncEnabled) return;
+
+            syncChannel = supabaseClient.channel(`pos_sync_${posName}`, {
+                config: { broadcast: { self: true } }
+            });
+
+            syncChannel
+                .on('broadcast', { event: 'client_action' }, payload => {
+                    handleIncomingClientAction(payload.payload);
+                })
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        logSyncActivity(`Master successfully bound & listening on channel: pos_sync_${posName}`);
+                    }
+                });
+        }
+
+        function handleIncomingClientAction(data) {
+            if (!data || !data.type) return;
+
+            logSyncActivity(`Incoming [${data.type}] packet from client: ${data.clientUser || 'Anonymous'}`);
+
+            if(!isSyncEnabled) {
+                logSyncActivity(`Ignored incoming packet [${data.type}]: Sync Service is currently DISABLED on Main.`);
+                return;
+            }
+
+            const posName = document.getElementById('sync-pos-name').value.trim();
+            const posDesc = document.getElementById('sync-pos-desc').value.trim();
+            const pairCode = document.getElementById('sync-pairing-code').value.trim();
+
+            if(data.type === 'SEARCH') {
+                if(data.targetPos === posName) {
+                    syncChannel.send({
+                        type: 'broadcast',
+                        event: 'pos_response',
+                        payload: { type: 'FOUND', posName, posDesc, targetClient: data.clientUser }
+                    });
+                    logSyncActivity(`Responded FOUND to discovery query from client (${data.clientUser || 'Scanner'})`);
+                }
+            } else if(data.type === 'CONNECT_REQUEST') {
+                if(blockedUsers.has(data.clientUser)) {
+                    logSyncActivity(`BLOCKED connection attempt from user: ${data.clientUser}`);
+                    syncChannel.send({
+                        type: 'broadcast',
+                        event: 'pos_response',
+                        payload: { type: 'AUTH_FAILED', reason: 'User blocked by administrator', targetClient: data.clientUser }
+                    });
+                    logSyncActivity(`[RESPONSE SENT] Transmitted AUTH_FAILED (User Blocked) to client: ${data.clientUser}`);
+                    return;
+                }
+
+                let isValidUser = false;
+                try {
+                    const uRes = dbService.query("SELECT * FROM users WHERE LOWER(name) = LOWER(?) AND password = ?", [data.username, data.password]);
+                    if (uRes.length > 0) isValidUser = true;
+                } catch(err) {
+                    logSyncActivity(`[DB ERROR] Auth query failed: ${err.message}`);
+                }
+
+                if(!isValidUser) {
+                    logSyncActivity(`[AUTH FAIL] User '${data.username}' not found in database or password mismatch.`);
+                } else {
+                    logSyncActivity(`[AUTH OK] Credentials valid for user: ${data.username}`);
+                }
+
+                const isPairingValid = (data.pairingCode === pairCode);
+                if(!isPairingValid) {
+                    logSyncActivity(`[AUTH FAIL] Pairing code mismatch ('${data.pairingCode}' vs expected '${pairCode}')`);
+                }
+
+                if(isPairingValid && isValidUser) {
+                    const items = dbService.query("SELECT * FROM products WHERE active = 1");
+                    const suppliers = dbService.query("SELECT * FROM suppliers");
+
+                    connectedClients[data.clientUser] = { name: data.clientUser, lastSeen: new Date().toLocaleTimeString() };
+                    updateConnectedClientsUI();
+
+                    syncChannel.send({
+                        type: 'broadcast',
+                        event: 'pos_response',
+                        payload: { type: 'CONNECTED', items, suppliers, targetClient: data.clientUser }
+                    });
+
+                    logSyncActivity(`ACCEPTED Client Connection & Authenticated: ${data.clientUser}`);
+                    logSyncActivity(`[RESPONSE SENT] Transmitted CONNECTED + Master Catalog to client: ${data.clientUser}`);
+                } else {
+                    let failReason = !isValidUser ? 'Invalid Username or Password' : 'Invalid Pairing Code';
+                    syncChannel.send({
+                        type: 'broadcast',
+                        event: 'pos_response',
+                        payload: { type: 'AUTH_FAILED', reason: failReason, targetClient: data.clientUser }
+                    });
+                    logSyncActivity(`REJECTED Client Connection (${failReason}): ${data.clientUser}`);
+                    logSyncActivity(`[RESPONSE SENT] Transmitted AUTH_FAILED (${failReason}) to client: ${data.clientUser}`);
+                }
+            } else if(data.type === 'SYNC_DATA') {
+                if(blockedUsers.has(data.clientUser)) return;
+
+                logSyncActivity(`Receiving item intake (${data.items.length} items) from ${data.clientUser}...`);
+
+                const nowStamp = new Date().toLocaleString();
+
+                data.items.forEach(item => {
+                    dbService.run("INSERT INTO intake_submissions (user, barcode, name, price, qty, supplier, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        [data.clientUser || 'Anonymous', item.barcode, item.name, item.price, item.qty, item.supplier, nowStamp]);
+
+                    const existing = dbService.query("SELECT id, stock FROM products WHERE barcode = ?", [item.barcode]);
+                    if(existing.length > 0) {
+                        const newStock = existing[0].stock + item.qty;
+                        dbService.run("UPDATE products SET stock = ?, price = ?, supplier = ? WHERE id = ?", [newStock, item.price, item.supplier, existing[0].id]);
+                    } else {
+                        const generatedSku = 'SKU-' + Math.floor(100000 + Math.random() * 900000);
+                        dbService.run("INSERT INTO products (name, sku, barcode, category, supplier, cost, price, stock, min_stock, active) VALUES (?, ?, ?, 'General', ?, 0, ?, ?, 5, 1)",
+                            [item.name, generatedSku, item.barcode, item.supplier, item.price, item.qty]);
+                    }
+                });
+
+                syncChannel.send({
+                    type: 'broadcast',
+                    event: 'pos_response',
+                    payload: { type: 'SYNC_COMPLETE', targetClient: data.clientUser }
+                });
+
+                logSyncActivity(`SUCCESSFULLY processed & saved intake batch from ${data.clientUser}!`);
+                renderAllViews();
+            }
+        }
+
+        /* SUBMISSIONS INSPECTOR TABLE & EDIT CONTROLS */
+        function renderSubmissionsTable() {
+            const tbody = document.getElementById('submissions-tbody');
+            const filterSelect = document.getElementById('userFilterSelect');
+            if(!tbody || !db) return;
+
+            const currentSelectedUser = filterSelect.value || 'ALL';
+            const usersList = dbService.query("SELECT DISTINCT user FROM intake_submissions ORDER BY user ASC");
+            let userOptions = `<option value="ALL">All Users</option>`;
+            usersList.forEach(uObj => {
+                let u = uObj.user;
+                let sel = (u === currentSelectedUser) ? 'selected' : '';
+                userOptions += `<option value="${u}" ${sel}>${u}</option>`;
+            });
+            filterSelect.innerHTML = userOptions;
+
+            let query = "SELECT * FROM intake_submissions";
+            let params = [];
+            if(currentSelectedUser !== 'ALL') {
+                query += " WHERE user = ?";
+                params.push(currentSelectedUser);
+            }
+            query += " ORDER BY id DESC";
+
+            const submissions = dbService.query(query, params);
+
+            if(submissions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-slate-400 italic">No client submission records found for selected filter.</td></tr>`;
+            } else {
+                tbody.innerHTML = submissions.map(s => `
+                    <tr class="border-b hover:bg-slate-50">
+                        <td class="p-2.5 text-slate-400 text-[11px]">${s.timestamp}</td>
+                        <td class="p-2.5 font-bold text-slate-800">
+                            <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-semibold">${s.user}</span>
+                        </td>
+                        <td class="p-2.5 font-mono text-slate-600">${s.barcode}</td>
+                        <td class="p-2.5 font-semibold text-slate-800">${s.name}</td>
+                        <td class="p-2.5 font-bold text-blue-600">£${s.price.toFixed(2)}</td>
+                        <td class="p-2.5 font-bold text-slate-700">${s.qty}</td>
+                        <td class="p-2.5 text-slate-500">${s.supplier}</td>
+                        <td class="p-2.5 text-center">
+                            <button onclick="openEditSubmissionModal(${s.id})" class="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 font-bold rounded-lg hover:bg-amber-100 text-[11px]">
+                                <i class="fa-solid fa-pen-to-square"></i> Edit
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function openEditSubmissionModal(id) {
+            const res = dbService.query("SELECT * FROM intake_submissions WHERE id = ?", [id]);
+            if(res.length > 0) {
+                const s = res[0];
+                document.getElementById('editSubId').value = s.id;
+                document.getElementById('editSubBarcode').value = s.barcode;
+                document.getElementById('editSubName').value = s.name;
+                document.getElementById('editSubPrice').value = s.price;
+                document.getElementById('editSubQty').value = s.qty;
+                document.getElementById('editSubSupplier').value = s.supplier;
+                openModal('editSubmissionModal');
+            }
+        }
+
+        function closeEditSubmissionModal() {
+            closeModal('editSubmissionModal');
+        }
+
+        function saveSubmissionEdit() {
+            const id = parseInt(document.getElementById('editSubId').value);
+            const barcode = document.getElementById('editSubBarcode').value.trim();
+            const name = document.getElementById('editSubName').value.trim();
+            const price = parseFloat(document.getElementById('editSubPrice').value) || 0;
+            const qty = parseInt(document.getElementById('editSubQty').value) || 1;
+            const supplier = document.getElementById('editSubSupplier').value.trim();
+
+            if(!barcode || !name) return alert("Barcode and Name required.");
+
+            dbService.run("UPDATE intake_submissions SET name = ?, price = ?, qty = ?, supplier = ? WHERE id = ?", [name, price, qty, supplier, id]);
+
+            const prod = dbService.query("SELECT id FROM products WHERE barcode = ?", [barcode]);
+            if(prod.length > 0) {
+                dbService.run("UPDATE products SET name = ?, price = ?, supplier = ? WHERE id = ?", [name, price, supplier, prod[0].id]);
+            }
+
+            closeEditSubmissionModal();
+            renderAllViews();
+            logSyncActivity(`Updated submission #${id} [${barcode}] & synced to Master Database.`);
+        }
+
+        function updateConnectedClientsUI() {
+            const list = document.getElementById('connected-clients-list');
+            const count = document.getElementById('connected-clients-count');
+            
+            const keys = Object.keys(connectedClients);
+            count.innerText = `${keys.length} Active`;
+
+            if(keys.length === 0) {
+                list.innerHTML = `<div class="text-slate-400 italic">No client devices paired yet.</div>`;
+                return;
+            }
+
+            list.innerHTML = keys.map(k => `
+                <div class="flex items-center justify-between p-2.5 bg-white rounded-xl border text-xs shadow-sm">
+                    <div>
+                        <div class="font-bold text-slate-800">${k}</div>
+                        <div class="text-[10px] text-slate-400">Last seen: ${connectedClients[k].lastSeen}</div>
+                    </div>
+                    <button onclick="blockUser('${k}')" class="px-2.5 py-1 bg-rose-100 text-rose-700 font-bold rounded-lg hover:bg-rose-200">Block</button>
+                </div>
+            `).join('');
+        }
+
+        function blockUser(user) {
+            blockedUsers.add(user);
+            delete connectedClients[user];
+            updateConnectedClientsUI();
+            logSyncActivity(`User ${user} BLOCKED and disconnected.`);
+        }
+
+        function logSyncActivity(msg) {
+            const box = document.getElementById('sync-activity-log');
+            if (!box) return;
+            const entry = document.createElement('div');
+            entry.className = "py-1 border-b border-slate-200/60";
+            entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            
+            if(box.firstChild) {
+                box.insertBefore(entry, box.firstChild);
+            } else {
+                box.appendChild(entry);
+            }
+        }
+
+        /* ------------------------------------------------------------------ */
+        /*                     8. CLIENT INTAKE SCREEN                        */
+        /* ------------------------------------------------------------------ */
+
+        function showAlertBox(type, msg) {
+            const box = document.getElementById('authAlertBox');
+            const icon = document.getElementById('authAlertIcon');
+            const text = document.getElementById('authAlertText');
+
+            box.classList.remove('hidden', 'bg-blue-50', 'text-blue-700', 'bg-emerald-50', 'text-emerald-700', 'bg-rose-50', 'text-rose-700');
+            
+            if(type === 'info') {
+                box.classList.add('bg-blue-50', 'text-blue-700');
+                icon.className = 'fa-solid fa-spinner animate-spin';
+            } else if(type === 'success') {
+                box.classList.add('bg-emerald-50', 'text-emerald-700');
+                icon.className = 'fa-solid fa-circle-check';
+            } else if(type === 'error') {
+                box.classList.add('bg-rose-50', 'text-rose-700');
+                icon.className = 'fa-solid fa-circle-xmark';
+            }
+            text.innerText = msg;
+        }
+
+        async function ensureClientChannelReady(posName) {
+            if (clientChannel && clientChannel.topic === `realtime:pos_sync_${posName}`) {
+                if (clientChannel.subState === 'joined') return;
+            }
+
+            if (clientChannel) {
+                await supabaseClient.removeChannel(clientChannel);
+                clientChannel = null;
+            }
+
+            clientChannel = supabaseClient.channel(`pos_sync_${posName}`, {
+                config: { broadcast: { self: true } }
+            });
+
+            clientChannel.on('broadcast', { event: 'pos_response' }, payload => {
+                handlePosResponse(payload.payload);
+            });
+
+            await new Promise((resolve) => {
+                clientChannel.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        resolve();
+                    }
+                });
+            });
+        }
+
+        async function searchPosTerminal() {
+            const posName = document.getElementById('targetPosNameInput').value.trim();
+            if(!posName) return alert("Enter a POS Name to search.");
+
+            const btn = document.getElementById('btnSearchPOS');
+            btn.disabled = true;
+            btn.innerText = "Searching...";
+            showAlertBox('info', 'Searching for active POS terminal...');
+
+            try {
+                await ensureClientChannelReady(posName);
+                
+                const username = document.getElementById('clientUsername').value.trim() || 'admin';
+                clientChannel.send({
+                    type: 'broadcast',
+                    event: 'client_action',
+                    payload: { type: 'SEARCH', targetPos: posName, clientUser: username }
+                });
+
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = "Search POS";
+                    if(document.getElementById('foundPosCard').classList.contains('hidden')) {
+                        showAlertBox('error', 'POS terminal not found or offline. Ensure POS sync service is enabled on Main.');
+                    }
+                }, 2500);
+
+            } catch(err) {
+                btn.disabled = false;
+                btn.innerText = "Search POS";
+                showAlertBox('error', 'Failed to connect to signal channel.');
+            }
+        }
+
+        async function connectToPos() {
+            const posName = (connectedPosInfo && connectedPosInfo.posName) ? connectedPosInfo.posName : document.getElementById('targetPosNameInput').value.trim();
+            const username = document.getElementById('clientUsername').value.trim();
+            const password = document.getElementById('clientPassword').value.trim();
+            const pairingCode = document.getElementById('clientPairingCode').value.trim();
+
+            if(!posName) return alert("No POS terminal discovered or specified.");
+
+            if(authTimeoutTimer) clearTimeout(authTimeoutTimer);
+
+            const btn = document.getElementById('btnConnectPOS');
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i> Authenticating...`;
+            showAlertBox('info', 'Authenticating credentials with POS Terminal...');
+
+            try {
+                await ensureClientChannelReady(posName);
+
+                clientChannel.send({
+                    type: 'broadcast',
+                    event: 'client_action',
+                    payload: {
+                        type: 'CONNECT_REQUEST',
+                        targetPos: posName,
+                        clientUser: username,
+                        username,
+                        password,
+                        pairingCode
+                    }
+                });
+
+                authTimeoutTimer = setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerText = "Authenticate & Fetch Master Catalog";
+                    if (document.getElementById('clientSyncBadge').innerText !== "Connected to POS") {
+                        showAlertBox('error', 'No response from Master POS. Ensure Sync Hub is ENABLED on Main.');
+                    }
+                }, 3500);
+
+            } catch(e) {
+                btn.disabled = false;
+                btn.innerText = "Authenticate & Fetch Master Catalog";
+                showAlertBox('error', 'Authentication broadcast failed.');
+            }
+        }
+
+        function handlePosResponse(data) {
+            if (!data) return;
+            const username = document.getElementById('clientUsername').value.trim() || 'admin';
+            if(data.targetClient && data.targetClient.toLowerCase() !== username.toLowerCase() && data.targetClient.toLowerCase() !== 'admin') return;
+
+            if(authTimeoutTimer) {
+                clearTimeout(authTimeoutTimer);
+                authTimeoutTimer = null;
+            }
+
+            const btn = document.getElementById('btnConnectPOS');
+
+            if(data.type === 'FOUND') {
+                connectedPosInfo = {
+                    posName: data.posName,
+                    posDesc: data.posDesc
+                };
+                document.getElementById('foundPosCard').classList.remove('hidden');
+                document.getElementById('foundPosTitle').innerText = data.posName;
+                document.getElementById('foundPosDesc').innerText = data.posDesc;
+                showAlertBox('success', `Found POS Terminal "${data.posName}". Ready for authentication.`);
+            } else if(data.type === 'CONNECTED') {
+                masterCatalog = data.items || [];
+                if(data.suppliers) masterSuppliers = data.suppliers.map(s => s.name || s);
+                updateSupplierDropdown();
+
+                const badge = document.getElementById('clientSyncBadge');
+                badge.innerText = "Connected to POS";
+                badge.className = "text-xs bg-emerald-500 text-white px-2.5 py-0.5 rounded-full font-bold";
+                document.getElementById('client-status-dot').className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse ml-auto";
+                showAlertBox('success', 'Connected and paired with POS Terminal!');
+
+                btn.disabled = false;
+                btn.innerText = "Connected & Synced";
+                btn.className = "w-full bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700";
+            } else if(data.type === 'AUTH_FAILED') {
+                const badge = document.getElementById('clientSyncBadge');
+                badge.innerText = "Authentication Failed";
+                badge.className = "text-xs bg-rose-500 text-white px-2.5 py-0.5 rounded-full font-bold";
+                document.getElementById('client-status-dot').className = "w-2.5 h-2.5 rounded-full bg-rose-500 ml-auto";
+                showAlertBox('error', `Connection Failed: ${data.reason || 'Invalid details'}`);
+
+                btn.disabled = false;
+                btn.innerText = "Authenticate & Fetch Master Catalog";
+                btn.className = "w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 shadow";
+            } else if(data.type === 'SYNC_COMPLETE') {
+                showAlertBox('success', 'Stock intake batch sent and saved to POS Terminal successfully!');
+                localIntakeItems = [];
+                renderPendingItems();
+            }
+        }
+
+        function updateSupplierDropdown() {
+            const select = document.getElementById('supplierSelect');
+            select.innerHTML = masterSuppliers.map(s => `<option value="${s}">${s}</option>`).join('');
+        }
+
+        function addNewSupplier() {
+            const name = prompt("Enter new supplier name:");
+            if(name) {
+                masterSuppliers.push(name);
+                updateSupplierDropdown();
+                document.getElementById('supplierSelect').value = name;
+            }
+        }
+
+        function handleBarcodeScannerInput() {
+            const barcode = document.getElementById('itemBarcode').value.trim();
+            if(!barcode) return;
+
+            const match = masterCatalog.find(i => i.barcode === barcode);
+            if(match) {
+                document.getElementById('itemName').value = match.name;
+                document.getElementById('itemPrice').value = match.price;
+                if(match.supplier) document.getElementById('supplierSelect').value = match.supplier;
+            }
+        }
+
+        async function lookupBarcodeOnline() {
+            const barcode = document.getElementById('itemBarcode').value.trim();
+            const box = document.getElementById('onlineSuggestionsBox');
+            if(!barcode) return alert("Enter barcode first.");
+
+            box.innerHTML = `<div class="text-xs text-slate-500 p-2">Searching Open Food Facts...</div>`;
+            box.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+                if(res.ok) {
+                    const data = await res.json();
+                    if(data.status === 1 && data.product) {
+                        const name = data.product.product_name || 'Online Item';
+                        box.innerHTML = `
+                            <div onclick="selectOnlineSuggestion('${name}')" class="p-2 hover:bg-blue-50 rounded cursor-pointer text-xs font-bold text-slate-800">
+                                ${name} (Click to apply)
+                            </div>
+                        `;
+                    } else {
+                        box.innerHTML = `<div class="text-xs text-rose-500 p-2">No online match found.</div>`;
+                    }
+                }
+            } catch(e) {
+                box.innerHTML = `<div class="text-xs text-rose-500 p-2">Lookup failed.</div>`;
+            }
+        }
+
+        function selectOnlineSuggestion(name) {
+            document.getElementById('itemName').value = name;
+            document.getElementById('onlineSuggestionsBox').classList.add('hidden');
+        }
+
+        function saveIntakeItem() {
+            const barcode = document.getElementById('itemBarcode').value.trim();
+            const name = document.getElementById('itemName').value.trim();
+            const price = parseFloat(document.getElementById('itemPrice').value) || 0;
+            const qty = parseInt(document.getElementById('itemQty').value) || 1;
+            const supplier = document.getElementById('supplierSelect').value;
+
+            if(!barcode || !name) return alert("Barcode and Name required.");
+
+            if(editingIndex !== null) {
+                localIntakeItems[editingIndex] = { barcode, name, price, qty, supplier };
+                editingIndex = null;
+            } else {
+                localIntakeItems.push({ barcode, name, price, qty, supplier });
+            }
+
+            document.getElementById('itemBarcode').value = '';
+            document.getElementById('itemName').value = '';
+            document.getElementById('itemPrice').value = '0.00';
+            document.getElementById('itemQty').value = '1';
+
+            renderPendingItems();
+        }
+
+        function renderPendingItems() {
+            const container = document.getElementById('pendingItemsList');
+            document.getElementById('pendingCountBadge').innerText = localIntakeItems.length;
+
+            if(localIntakeItems.length === 0) {
+                container.innerHTML = `<div class="text-slate-400 text-xs italic text-center py-10">No items scanned yet. Scan or manually enter items on the right.</div>`;
+                return;
+            }
+
+            container.innerHTML = localIntakeItems.map((item, idx) => `
+                <div class="p-3 bg-slate-50 border rounded-xl text-xs space-y-1">
+                    <div class="flex justify-between font-bold text-slate-800">
+                        <span>${item.name}</span>
+                        <span class="text-blue-600">x${item.qty}</span>
+                    </div>
+                    <div class="flex justify-between text-slate-400 text-[10px]">
+                        <span>${item.barcode} | £${item.price.toFixed(2)}</span>
+                        <span>${item.supplier}</span>
+                    </div>
+                    <div class="flex gap-2 pt-1 border-t text-[10px]">
+                        <button onclick="editIntakeItem(${idx})" class="text-blue-600 font-semibold">Edit</button>
+                        <button onclick="removeIntakeItem(${idx})" class="text-rose-500 font-semibold">Remove</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function editIntakeItem(idx) {
+            const item = localIntakeItems[idx];
+            editingIndex = idx;
+            document.getElementById('itemBarcode').value = item.barcode;
+            document.getElementById('itemName').value = item.name;
+            document.getElementById('itemPrice').value = item.price;
+            document.getElementById('itemQty').value = item.qty;
+            document.getElementById('supplierSelect').value = item.supplier;
+        }
+
+        function removeIntakeItem(idx) {
+            localIntakeItems.splice(idx, 1);
+            renderPendingItems();
+        }
+
+        async function attemptPosSync() {
+            if(localIntakeItems.length === 0) return alert("Intake list is empty.");
+            const posName = (connectedPosInfo && connectedPosInfo.posName) ? connectedPosInfo.posName : document.getElementById('targetPosNameInput').value.trim();
+            const username = document.getElementById('clientUsername').value.trim();
+
+            showAlertBox('info', 'Sending intake batch to POS Terminal...');
+
+            try {
+                await ensureClientChannelReady(posName);
+
+                clientChannel.send({
+                    type: 'broadcast',
+                    event: 'client_action',
+                    payload: {
+                        type: 'SYNC_DATA',
+                        targetPos: posName,
+                        clientUser: username,
+                        items: localIntakeItems
+                    }
+                });
+            } catch(e) {
+                showAlertBox('error', 'Failed to transmit batch data.');
+            }
+        }
+
+        /* CAMERA MODAL CONTROLS */
+        function openCameraModal() {
+            openModal('cameraModal');
+            html5QrCode = new Html5Qrcode("reader");
+            html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 200 }, decodedText => {
+                document.getElementById('itemBarcode').value = decodedText;
+                handleBarcodeScannerInput();
+                closeCameraModal();
+            }).catch(e => console.error(e));
+        }
+
+        function closeCameraModal() {
+            if(html5QrCode) html5QrCode.stop().then(() => closeModal('cameraModal'));
+            else closeModal('cameraModal');
         }
     </script>
 </body>
